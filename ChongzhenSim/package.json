@@ -1,7 +1,7 @@
 {
   "name": "chongzhensim-v2",
   "private": true,
-  "version": "0.1.4",
+  "version": "0.1.5",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -18,6 +18,7 @@
     "echarts": "^6.0.0",
     "express": "^4.22.1",
     "leaflet": "^1.9.4",
+    "lucide-react": "^1.0.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-is": "^19.2.4",

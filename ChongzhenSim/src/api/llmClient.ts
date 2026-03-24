@@ -8,6 +8,7 @@ import {
 } from './eventContext';
 import type { Minister } from '../core/types';
 import { createLogger } from '../utils/logger';
+import { getSettings } from '../store/settingsStore';
 
 const logger = createLogger('LLM');
 
@@ -35,16 +36,28 @@ const FALLBACK_EVENT: AIEventResponse = {
 };
 
 export class LLMClient {
-  private provider;
+  private provider: ReturnType<typeof createOpenAI>;
   private modelName: string;
   private useServerProxy: boolean;
 
   constructor() {
-    const apiKey = import.meta.env.VITE_OPENAI_API_KEY || 
+    this.provider = createOpenAI({ compatibility: 'strict' });
+    this.modelName = 'gpt-4o';
+    this.useServerProxy = true;
+    this.updateConfig();
+  }
+
+  private updateConfig() {
+    const settings = getSettings();
+    const llmConfig = settings.llmConfig;
+    
+    const apiKey = llmConfig.apiKey || 
+                   import.meta.env.VITE_OPENAI_API_KEY || 
                    import.meta.env.VITE_DEEPSEEK_API_KEY ||
                    '';
     
-    const baseURL = import.meta.env.VITE_OPENAI_BASE_URL || 
+    const baseURL = llmConfig.baseUrl || 
+                    import.meta.env.VITE_OPENAI_BASE_URL || 
                     (import.meta.env.VITE_DEEPSEEK_API_KEY ? 'https://api.deepseek.com' : undefined);
     
     this.provider = createOpenAI({ 
@@ -53,15 +66,32 @@ export class LLMClient {
       compatibility: 'strict' 
     });
     
-    this.modelName = import.meta.env.VITE_MODEL_NAME || 'gpt-4o';
+    this.modelName = llmConfig.model || import.meta.env.VITE_MODEL_NAME || 'gpt-4o';
     this.useServerProxy = !apiKey;
+  }
+
+  private getUpdatedProvider() {
+    this.updateConfig();
+    return this.provider;
+  }
+
+  private getUpdatedModelName() {
+    this.updateConfig();
+    return this.modelName;
+  }
+
+  private getUpdatedUseServerProxy() {
+    this.updateConfig();
+    return this.useServerProxy;
   }
 
   async generateEvent(context: EventContext): Promise<AIEventResponse> {
     try {
       logger.info('Requesting LLM for event generation...');
+      const provider = this.getUpdatedProvider();
+      const modelName = this.getUpdatedModelName();
       const { object } = await generateObject({
-        model: this.provider(this.modelName),
+        model: provider(modelName),
         schema: AIEventResponseSchema,
         system: SYSTEM_PROMPT,
         prompt: buildUserPrompt(context),
@@ -83,7 +113,8 @@ export class LLMClient {
   ): Promise<ReadableStream<string>> {
     logger.info('Requesting LLM for minister chat...', { minister: minister.name });
     
-    if (this.useServerProxy) {
+    const useServerProxy = this.getUpdatedUseServerProxy();
+    if (useServerProxy) {
       logger.debug('Using server proxy for minister chat');
       return this.streamMinisterChatViaProxy(minister, playerMessage);
     }
@@ -105,8 +136,10 @@ export class LLMClient {
     );
 
     try {
+      const provider = this.getUpdatedProvider();
+      const modelName = this.getUpdatedModelName();
       const result = await streamText({
-        model: this.provider(this.modelName),
+        model: provider(modelName),
         system: systemPrompt,
         prompt: playerMessage,
       });
@@ -191,18 +224,23 @@ export class LLMClient {
   }
 
   isConfigured(): boolean {
-    const apiKey = import.meta.env.VITE_OPENAI_API_KEY || 
+    const settings = getSettings();
+    const llmConfig = settings.llmConfig;
+    const apiKey = llmConfig.apiKey || 
+                   import.meta.env.VITE_OPENAI_API_KEY || 
                    import.meta.env.VITE_DEEPSEEK_API_KEY;
-    return !!apiKey || this.useServerProxy;
+    return !!apiKey || this.getUpdatedUseServerProxy();
   }
 
   getConfigInfo(): { provider: string; model: string; configured: boolean } {
+    const settings = getSettings();
+    const llmConfig = settings.llmConfig;
     const hasOpenAI = !!import.meta.env.VITE_OPENAI_API_KEY;
     const hasDeepSeek = !!import.meta.env.VITE_DEEPSEEK_API_KEY;
     
     return {
-      provider: hasDeepSeek ? 'DeepSeek' : (hasOpenAI ? 'OpenAI' : 'Server Proxy'),
-      model: this.modelName,
+      provider: llmConfig.provider || (hasDeepSeek ? 'DeepSeek' : (hasOpenAI ? 'OpenAI' : 'Server Proxy')),
+      model: llmConfig.model || this.getUpdatedModelName(),
       configured: this.isConfigured()
     };
   }

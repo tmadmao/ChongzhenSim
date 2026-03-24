@@ -34,3 +34,15 @@ export const MinisterChatResponseSchema = z.object({
 });
 
 export type MinisterChatResponse = z.infer<typeof MinisterChatResponseSchema>;
+
+// 游戏设置接口
+export interface GameSettings {
+  theme: 'dark' | 'light';
+  gameMode: 'local' | 'llm';
+  llmConfig: {
+    provider: string;
+    apiKey: string;
+    baseUrl: string;
+    model: string;
+  };
+}

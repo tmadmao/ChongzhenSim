@@ -14,6 +14,7 @@ const GameMap = lazy(() => import('./components/map').then(module => ({ default:
 const ProvinceInfoPanel = lazy(() => import('./components/map/ProvinceInfoPanel'));
 const MinisterChatPanel = lazy(() => import('./components/minister').then(module => ({ default: module.MinisterChatPanel })));
 const DecreePanel = lazy(() => import('./components/decree').then(module => ({ default: module.DecreePanel })));
+const SettingsPanel = lazy(() => import('./components/settings/SettingsPanel'));
 
 // Loading 组件
 const Loading = () => (
@@ -34,6 +35,7 @@ function App() {
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   const [showMinisterChat, setShowMinisterChat] = useState(false);
   const [showDecree, setShowDecree] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [showScenarioEvent] = useState(true);
   const [dbReady, setDbReady] = useState(false);
   const [needsNewGame, setNeedsNewGame] = useState(false);
@@ -202,6 +204,7 @@ function App() {
           <BottomBar 
             onOpenMinisterChat={() => setShowMinisterChat(true)}
             onOpenDecree={() => setShowDecree(true)}
+            onOpenSettings={() => setShowSettings(true)}
           />
         }
       >
@@ -237,6 +240,11 @@ function App() {
         <ScenarioEventPanel isVisible={showScenarioEvent} />
       </Suspense>
 
+      {showSettings && (
+        <Suspense fallback={<Loading />}>
+          <SettingsPanel onClose={() => setShowSettings(false)} />
+        </Suspense>
+      )}
 
     </>
   );

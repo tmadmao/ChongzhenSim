@@ -1,12 +1,14 @@
 import { useState } from 'react';
+import { Settings } from 'lucide-react';
 import { useGameStore } from '../../store/gameStore';
 
 interface BottomBarProps {
   onOpenMinisterChat: () => void;
   onOpenDecree: () => void;
+  onOpenSettings: () => void;
 }
 
-export function BottomBar({ onOpenMinisterChat, onOpenDecree }: BottomBarProps) {
+export function BottomBar({ onOpenMinisterChat, onOpenDecree, onOpenSettings }: BottomBarProps) {
   const { endTurn, saveGame, isLoading } = useGameStore();
   const [showConfirm, setShowConfirm] = useState(false);
 
@@ -44,10 +46,11 @@ export function BottomBar({ onOpenMinisterChat, onOpenDecree }: BottomBarProps) 
 
       <div className="flex items-center gap-4">
         <button 
-          onClick={saveGame}
-          className="palace-button-outline btn-glow text-sm"
+          onClick={onOpenSettings}
+          className="palace-button-outline btn-glow text-sm flex items-center gap-2"
         >
-          💾 存档
+          <Settings size={16} />
+          设置
         </button>
 
         <button 
