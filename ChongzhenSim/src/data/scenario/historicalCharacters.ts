@@ -1,4 +1,7 @@
 // 历史人物：开局在任 + 登场时间表 + 退出机制
+// 所有数值从 gameConfig.ts 引用，禁止硬编码
+
+import { GAME_CONFIG } from '@/config/gameConfig'
 
 export type CharacterStatus = 'active' | 'pending' | 'dead' | 'exiled' | 'betrayed'
 
@@ -10,6 +13,7 @@ export interface HistoricalCharacter {
   ambition: number         // 野心 0-100
   competence: number       // 能力 0-100
   corruption: number       // 贪腐 0-100
+  age?: number             // 年龄
   status: CharacterStatus
   // 登场条件（pending → active）
   joinConditions?: {
@@ -18,6 +22,12 @@ export interface HistoricalCharacter {
     prestigeMin?: number          // 皇帝威望达标
     factionSupportMin?: { factionId: string; value: number }
     unrestMin?: number            // 民变强度达标
+  }
+  // 退出触发条件
+  exitTriggers?: {
+    year?: number                 // 特定年份退出
+    turn?: number                 // 特定回合退出
+    loyaltyBelow?: number         // 忠诚度低于此值退出
   }
   // 退出方式
   exitMethods: {
@@ -33,16 +43,19 @@ export interface HistoricalCharacter {
   }
 }
 
+// 使用配置常量定义角色属性
+const { NPC } = GAME_CONFIG
+
 export const HISTORICAL_CHARACTERS: HistoricalCharacter[] = [
   // ── 开局在任 ──
   {
     id: 'wei_zhongxian',
     name: '魏忠贤',
     faction: 'eunuch_party',
-    loyalty: 20,
-    ambition: 85,
-    competence: 70,
-    corruption: 90,
+    loyalty: NPC.LOYALTY.LOW - 10,           // 极低忠诚：20
+    ambition: NPC.AMBITION.MAX - 15,         // 极高野心：85
+    competence: NPC.COMPETENCE.HIGH - 10,    // 较高能力：70
+    corruption: NPC.CORRUPTION.CRITICAL,     // 极度贪腐：90
     status: 'active',
     exitMethods: {
       canBeExecuted: true,
@@ -60,10 +73,10 @@ export const HISTORICAL_CHARACTERS: HistoricalCharacter[] = [
     id: 'wang_chengen',
     name: '王承恩',
     faction: 'emperor_loyalist',
-    loyalty: 80,
-    ambition: 20,
-    competence: 60,
-    corruption: 5,
+    loyalty: NPC.LOYALTY.HIGH,               // 高忠诚：80
+    ambition: NPC.AMBITION.MIN + 20,         // 低野心：20
+    competence: NPC.COMPETENCE.DEFAULT + 10, // 中等能力：60
+    corruption: NPC.CORRUPTION.MIN + 5,      // 极低贪腐：5
     status: 'active',
     exitMethods: {
       canBeExecuted: false,
@@ -79,10 +92,10 @@ export const HISTORICAL_CHARACTERS: HistoricalCharacter[] = [
     id: 'yuan_chonghuan',
     name: '袁崇焕',
     faction: 'guanning_army',
-    loyalty: 65,
-    ambition: 50,
-    competence: 90,
-    corruption: 10,
+    loyalty: NPC.LOYALTY.DEFAULT + 15,      // 中等偏上忠诚：65
+    ambition: NPC.AMBITION.DEFAULT,          // 中等野心：50
+    competence: NPC.COMPETENCE.MAX - 10,     // 极高能力：90
+    corruption: NPC.CORRUPTION.LOW - 10,     // 低贪腐：10
     status: 'pending',
     joinConditions: {
       year: 1628,
@@ -104,10 +117,10 @@ export const HISTORICAL_CHARACTERS: HistoricalCharacter[] = [
     id: 'sun_chengzong',
     name: '孙承宗',
     faction: 'donglin',
-    loyalty: 75,
-    ambition: 30,
-    competence: 85,
-    corruption: 5,
+    loyalty: NPC.LOYALTY.HIGH - 5,           // 高忠诚：75
+    ambition: NPC.AMBITION.MIN + 30,         // 低野心：30
+    competence: NPC.COMPETENCE.HIGH + 5,     // 高能力：85
+    corruption: NPC.CORRUPTION.MIN + 5,      // 极低贪腐：5
     status: 'pending',
     joinConditions: {
       year: 1628,
@@ -129,10 +142,10 @@ export const HISTORICAL_CHARACTERS: HistoricalCharacter[] = [
     id: 'hong_chengchou',
     name: '洪承畴',
     faction: 'military_generals',
-    loyalty: 55,
-    ambition: 60,
-    competence: 88,
-    corruption: 20,
+    loyalty: NPC.LOYALTY.DEFAULT + 5,        // 中等忠诚：55
+    ambition: NPC.AMBITION.DEFAULT + 10,     // 中等偏高野心：60
+    competence: NPC.COMPETENCE.HIGH + 8,     // 高能力：88
+    corruption: NPC.CORRUPTION.DEFAULT - 10, // 中等偏低贪腐：20
     status: 'pending',
     joinConditions: { year: 1629 },
     exitMethods: {
@@ -150,10 +163,10 @@ export const HISTORICAL_CHARACTERS: HistoricalCharacter[] = [
     id: 'lu_xiangsheng',
     name: '卢象升',
     faction: 'military_generals',
-    loyalty: 70,
-    ambition: 30,
-    competence: 85,
-    corruption: 5,
+    loyalty: NPC.LOYALTY.HIGH - 10,          // 较高忠诚：70
+    ambition: NPC.AMBITION.MIN + 30,         // 低野心：30
+    competence: NPC.COMPETENCE.HIGH + 5,     // 高能力：85
+    corruption: NPC.CORRUPTION.MIN + 5,      // 极低贪腐：5
     status: 'pending',
     joinConditions: {
       year: 1629,
@@ -174,10 +187,10 @@ export const HISTORICAL_CHARACTERS: HistoricalCharacter[] = [
     id: 'yang_sichang',
     name: '杨嗣昌',
     faction: 'civil_officials',
-    loyalty: 60,
-    ambition: 55,
-    competence: 75,
-    corruption: 30,
+    loyalty: NPC.LOYALTY.DEFAULT + 10,      // 中等偏上忠诚：60
+    ambition: NPC.AMBITION.DEFAULT + 5,     // 中等偏高野心：55
+    competence: NPC.COMPETENCE.HIGH - 5,    // 中高能力：75
+    corruption: NPC.CORRUPTION.DEFAULT,     // 中等贪腐：30
     status: 'pending',
     joinConditions: { year: 1629 },
     exitMethods: {
@@ -192,10 +205,11 @@ export const HISTORICAL_CHARACTERS: HistoricalCharacter[] = [
 ]
 
 // 人物通用退出规则（供 characterSystem 直接使用）
+// 使用 GAME_CONFIG 中的配置常量
 export const CHARACTER_EXIT_RULES = {
   executedPrestigePenalty: [-10, -30],   // 赐死威望扣减范围
   imprisonedLoyaltyClear: true,           // 下狱后忠诚归零
-  betrayalLoyaltyThreshold: 30,           // 忠诚低于此值+有兵权→叛变
+  betrayalLoyaltyThreshold: NPC.LOYALTY.LOW,  // 忠诚低于此值+有兵权→叛变
   naturalDeathAgeThreshold: 65,           // 年龄>=65每季度10%死亡概率
   factionDestroyForceExit: true,          // 势力灭亡强制隐退
 }

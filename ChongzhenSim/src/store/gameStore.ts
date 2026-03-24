@@ -4,17 +4,19 @@ import type { GameState, Province, Minister, NationStats, AIEventResponse, Playe
 import { emitGameEvent } from '../core/eventBus';
 import { gameLoop } from '../core/gameLoop';
 import { llmClient, buildEventContext } from '../api';
-import type { FinancialLedger } from '../api/schemas';
+import type { FinancialLedger, OptionEffect } from '../api/schemas';
 import { 
   initDatabase, 
   insertProvinces, 
   getAllProvinces, 
-  updateProvince,
   saveToLocalStorage,
   clearDatabase
 } from '../db/database';
+import { createLogger } from '../utils/logger';
 import { useProvinceStore } from './provinceStore';
 import { useFinanceStore } from './financeStore';
+
+const logger = createLogger('GameStore');
 
 interface PendingDecision {
   type: string;
@@ -158,7 +160,7 @@ export const useGameStore = create<GameStore>()(
               'random'
             );
             const aiEvent = await llmClient.generateEvent(eventContext);
-            newState.currentEvent = aiEvent;
+            newState.currentEvent = aiEvent as unknown as AIEventResponse;
           } catch (aiError) {
             console.warn('[GameStore] AI 事件生成失败，使用默认事件', aiError);
             newState.currentEvent = {
@@ -170,7 +172,7 @@ export const useGameStore = create<GameStore>()(
               ],
               immediateEffects: [],
               ministersInvolved: []
-            };
+            } as unknown as AIEventResponse;
           }
           
           const newLogs = [
@@ -238,16 +240,18 @@ export const useGameStore = create<GameStore>()(
                 let resolvedValue: number;
                 let mode: 'delta' | 'absolute';
 
+                const optEffect = effect as unknown as OptionEffect;
+                const gameEffect = effect as any;
                 if ('value' in effect || 'configKey' in effect) {
                   // 新格式 OptionEffect
                   resolvedValue = resolveEffectValue(
-                    effect.configKey as any,
-                    effect.value
+                    optEffect.configKey as any,
+                    optEffect.value
                   );
-                  mode = effect.mode || 'delta';
+                  mode = optEffect.mode || 'delta';
                 } else {
                   // 旧格式 GameEffect
-                  resolvedValue = effect.delta || 0;
+                  resolvedValue = gameEffect.delta || 0;
                   mode = 'delta';
                 }
 
@@ -360,12 +364,13 @@ export const useGameStore = create<GameStore>()(
               console.log(`[GameStore] Queueing ${decision.effects.length} decision effects`);
               
               for (const effect of decision.effects) {
+                const anyEffect = effect as any;
                 changeQueue.enqueue({
                   type: effect.type as any,
                   target: effect.target,
                   field: effect.field,
-                  delta: effect.delta,
-                  newValue: effect.newValue,
+                  delta: anyEffect.delta,
+                  newValue: anyEffect.newValue,
                   description: effect.description || '决策效果',
                   source: decision.choiceId || 'unknown'
                 });
@@ -602,12 +607,24 @@ export const useGameStore = create<GameStore>()(
         if (!gameState) return;
         
         try {
-          const { scenarioEngine } = await import('@/systems/scenarioEngine');
-          const newState = scenarioEngine.applyEffectsPublic(effects, gameState);
+          const { changeQueue } = await import('@/engine/ChangeQueue');
+          
+          // 将所有效果加入队列，统一在回合结束时处理
+          for (const effect of effects) {
+            const anyEffect = effect as any;
+            changeQueue.enqueue({
+              type: effect.type as any,
+              target: effect.target,
+              field: effect.field,
+              delta: anyEffect.delta,
+              newValue: anyEffect.newValue,
+              description: effect.description || '批量效果',
+              source: 'applyBatchEffects'
+            });
+          }
           
           set({ 
-            gameState: newState,
-            turnLog: [...turnLog, `批量应用 ${effects.length} 个效果`]
+            turnLog: [...turnLog, `批量应用 ${effects.length} 个效果（待结算）`]
           });
           
           emitGameEvent('effects:applied' as any, { effects });

@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useGameStore } from '../../store/gameStore';
-import type { Choice } from '../../api';
 
 export function EventPanel() {
   const { gameState, applyPlayerDecision } = useGameStore();
@@ -20,7 +19,7 @@ export function EventPanel() {
     );
   }
 
-  const handleChoice = (choice: Choice) => {
+  const handleChoice = (choice: any) => {
     setSelectedChoice(choice.id);
     setShowEffects(true);
     
@@ -28,7 +27,7 @@ export function EventPanel() {
       applyPlayerDecision({
         type: 'event_choice',
         choiceId: choice.id,
-        effects: choice.effects
+        effects: choice.effects as any
       });
       setSelectedChoice(null);
       setShowEffects(false);
@@ -80,11 +79,15 @@ export function EventPanel() {
           <div className="mt-4 p-3 bg-palace-bg-light rounded-lg">
             <p className="text-palace-text-muted text-xs mb-2">即时影响：</p>
             <div className="space-y-1">
-              {currentEvent.immediateEffects.map((effect, i) => (
-                <p key={i} className={`text-sm ${effect.delta > 0 ? 'text-success' : 'text-danger'}`}>
-                  · {effect.description}
-                </p>
-              ))}
+              {currentEvent.immediateEffects.map((effect, i) => {
+                const anyEffect = effect as any;
+                const isPositive = (anyEffect.delta > 0) || (anyEffect.mode === 'absolute' && anyEffect.value && anyEffect.value > 0);
+                return (
+                  <p key={i} className={`text-sm ${isPositive ? 'text-success' : 'text-danger'}`}>
+                    · {effect.description}
+                  </p>
+                );
+              })}
             </div>
           </div>
         )}
@@ -96,14 +99,18 @@ export function EventPanel() {
         {showEffects && selectedChoice ? (
           <div className="space-y-2 animate-fade-in">
             <p className="text-palace-text-muted text-sm">决策生效中...</p>
-            {currentEvent.choices.find(c => c.id === selectedChoice)?.effects.map((effect, i) => (
-              <p 
-                key={i} 
-                className={`text-sm ${effect.delta > 0 ? 'text-success' : 'text-danger'}`}
-              >
-                · {effect.description}
-              </p>
-            ))}
+            {currentEvent.choices.find(c => c.id === selectedChoice)?.effects.map((effect, i) => {
+              const anyEffect = effect as any;
+              const isPositive = (anyEffect.delta > 0) || (anyEffect.mode === 'absolute' && anyEffect.value && anyEffect.value > 0);
+              return (
+                <p 
+                  key={i} 
+                  className={`text-sm ${isPositive ? 'text-success' : 'text-danger'}`}
+                >
+                  · {effect.description}
+                </p>
+              );
+            })}
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-3">

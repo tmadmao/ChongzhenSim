@@ -1,10 +1,137 @@
 // 游戏配置文件 - 存储所有影响数值平衡的常量
+// 所有数值必须从这里引用，禁止在剧本和业务逻辑中硬编码
 
 export const GAME_CONFIG = {
+  // ============================================
   // 初始值配置
+  // ============================================
   INITIAL: {
-    TREASURY: 800,
-    GRAIN: 500,
+    TREASURY: 800,           // 初始国库（万两）
+    GRAIN: 500,              // 初始粮食（万石）
+    TURN: 1,                 // 初始回合
+    DATE: '崇祯元年正月',     // 初始日期
+  },
+
+  // ============================================
+  // NPC（官员）数值配置
+  // ============================================
+  NPC: {
+    // 属性范围
+    LOYALTY: {
+      MIN: 0,                // 忠诚度最小值
+      MAX: 100,              // 忠诚度最大值
+      DEFAULT: 50,           // 默认忠诚度
+      HIGH: 80,              // 高忠诚度阈值
+      LOW: 30,               // 低忠诚度阈值
+      CRITICAL: 10,          // 危险忠诚度阈值
+    },
+    CORRUPTION: {
+      MIN: 0,                // 贪腐最小值
+      MAX: 100,              // 贪腐最大值
+      DEFAULT: 30,           // 默认贪腐值
+      HIGH: 70,              // 高贪腐阈值
+      LOW: 20,               // 低贪腐阈值
+      CRITICAL: 90,          // 极度贪腐阈值
+    },
+    COMPETENCE: {
+      MIN: 0,                // 能力最小值
+      MAX: 100,              // 能力最大值
+      DEFAULT: 50,           // 默认能力值
+      HIGH: 80,              // 高能力阈值
+      LOW: 30,               // 低能力阈值
+    },
+    RELATIONSHIP: {
+      MIN: -100,             // 关系最小值
+      MAX: 100,              // 关系最大值
+      DEFAULT: 0,            // 默认关系值
+    },
+    AMBITION: {
+      MIN: 0,                // 野心最小值
+      MAX: 100,              // 野心最大值
+      DEFAULT: 50,           // 默认野心值
+    },
+    // 变动系数
+    CHANGE: {
+      LOYALTY_PER_CORRUPTION: -0.5,  // 每点贪腐导致的忠诚减少
+      LOYALTY_PER_EVENT: 5,          // 事件影响的忠诚变动基数
+      CORRUPTION_PER_TURN: 1,        // 每回合贪腐自然增长
+      CORRUPTION_REDUCTION_PER_ACTION: 10, // 每次反腐行动减少的贪腐
+    },
+  },
+
+  // ============================================
+  // 省份数值配置
+  // ============================================
+  PROVINCE: {
+    // 人口配置（万人）
+    POPULATION: {
+      MIN: 100,              // 最小人口
+      MAX: 2000,             // 最大人口
+      CAPITAL_BONUS: 1.2,    // 首都人口加成
+    },
+    // 税率配置
+    TAX_RATE: {
+      MIN: 0.05,             // 最低税率
+      MAX: 0.60,             // 最高税率
+      DEFAULT: 0.25,         // 默认税率
+      STEP: 0.05,            // 税率调整步长
+      // 税率等级
+      LEVELS: {
+        VERY_LOW: { min: 0, max: 0.10, label: '极低' },
+        LOW: { min: 0.10, max: 0.20, label: '低' },
+        NORMAL: { min: 0.20, max: 0.30, label: '正常' },
+        HIGH: { min: 0.30, max: 0.40, label: '高' },
+        VERY_HIGH: { min: 0.40, max: 0.60, label: '极高' },
+      },
+    },
+    // 民乱配置
+    UNREST: {
+      MIN: 0,                // 最小民乱
+      MAX: 100,              // 最大民乱
+      CRITICAL: 80,          // 危险民乱阈值
+      HIGH: 60,              // 高民乱阈值
+      REDUCTION_PER_TURN: 5, // 每回合自然减少
+      INCREASE_PER_DISASTER: 10, // 灾害导致的民乱增加
+      INCREASE_PER_HIGH_TAX: 15, // 高税率导致的民乱增加
+    },
+    // 灾害等级
+    DISASTER: {
+      NONE: 0,               // 无灾害
+      LIGHT: 1,              // 轻度灾害
+      MODERATE: 2,           // 中度灾害
+      SEVERE: 3,             // 重度灾害
+      CATASTROPHIC: 4,       // 毁灭性灾害
+    },
+    // 贪腐等级
+    CORRUPTION: {
+      MIN: 0,
+      MAX: 100,
+      LOW: 30,
+      MODERATE: 50,
+      HIGH: 70,
+      CHANGE_RANGE: 5,       // 每回合变化范围
+    },
+    // 民心配置
+    MORALE: {
+      MIN: 0,
+      MAX: 100,
+      DEFAULT: 50,
+      HIGH: 70,
+      LOW: 30,
+    },
+    // 军力配置
+    MILITARY: {
+      MIN: 10,
+      MAX: 100,
+      DEFAULT: 30,
+      BORDER_PROVINCE_BONUS: 20, // 边境省份军力加成
+    },
+    // 粮仓配置（万石）
+    GRANARY: {
+      MIN: 20,
+      MAX: 500,
+      DEFAULT: 100,
+    },
   },
 
   // ============================================
@@ -88,17 +215,7 @@ export const GAME_CONFIG = {
     POTENTIAL_TAX_FACTOR: 0.1,         // 潜在税收计算系数
   },
 
-  // 省份系统配置
-  PROVINCE: {
-    UNREST_REDUCTION_PER_TURN: 5,       // 每回合民乱减少值
-    DISASTER_UNREST_INCREASE: 10,       // 灾害导致的民乱增加
-    HIGH_TAX_UNREST_THRESHOLD: 0.3,     // 高税率民乱阈值
-    UNREST_PER_TAX_ABOVE_THRESHOLD: 15, // 超过阈值的民乱增加系数
-    DISASTER_REDUCTION_CHANCE: 0.2,     // 灾害减少的概率
-    CORRUPTION_CHANGE_RANGE: 5,          // 贪腐变化范围
-  },
-
-  // 官员系统配置
+  // 官员系统配置（旧版，向后兼容）
   MINISTER: {
     LOYALTY_REDUCTION_FROM_CORRUPTION: 1, // 贪腐导致的忠诚减少
     CORRUPTION_INCREASE_FROM_NATION: 1,   // 国家贪腐导致的官员贪腐增加
@@ -107,13 +224,82 @@ export const GAME_CONFIG = {
     NATION_CORRUPTION_THRESHOLD: 60,      // 国家贪腐阈值
   },
 
-  // 国家系统配置
+  // ============================================
+  // 国家属性配置
+  // ============================================
   NATION: {
-    MILITARY_POWER_DIVISOR: 10,          // 军力计算除数
-    MORALE_UNREST_FACTOR: 100,           // 民心与民乱的关系因子
-    BORDER_THREAT_FLUCTUATION: 10,        // 边患波动范围
-    BORDER_THREAT_INCREASE: 5,            // 低军力导致的边患增加
-    DISASTER_AGRICULTURAL_FACTOR: 10,     // 灾害对农业产出的影响因子
+    // 民心配置
+    PEOPLE_MORALE: {
+      MIN: 0,
+      MAX: 100,
+      DEFAULT: 50,
+      HIGH: 70,
+      LOW: 30,
+      CRITICAL: 20,
+    },
+    // 军力配置
+    MILITARY_POWER: {
+      MIN: 0,
+      MAX: 100,
+      DEFAULT: 50,
+      HIGH: 70,
+      LOW: 30,
+      DIVISOR: 10,              // 军力计算除数
+    },
+    // 边患配置
+    BORDER_THREAT: {
+      MIN: 0,
+      MAX: 100,
+      DEFAULT: 30,
+      HIGH: 60,
+      CRITICAL: 80,
+      FLUCTUATION: 10,          // 边患波动范围
+      INCREASE_ON_LOW_MILITARY: 5, // 低军力导致的边患增加
+    },
+    // 整体贪腐
+    OVERALL_CORRUPTION: {
+      MIN: 0,
+      MAX: 100,
+      DEFAULT: 40,
+      HIGH: 60,
+      CRITICAL: 80,
+    },
+    // 农业产出
+    AGRICULTURAL_OUTPUT: {
+      MIN: 0,
+      MAX: 100,
+      DEFAULT: 60,
+      DISASTER_IMPACT_FACTOR: 10, // 灾害对农业产出的影响因子
+    },
+    // 民心与民乱关系
+    MORALE_UNREST_FACTOR: 100,   // 民心与民乱的关系因子
+  },
+
+  // ============================================
+  // 游戏结束条件
+  // ============================================
+  GAME_OVER: {
+    // 国库破产
+    BANKRUPTCY: {
+      GOLD_THRESHOLD: 0,         // 国库低于此值触发
+      GRAIN_THRESHOLD: 0,        // 粮食低于此值触发
+      CONSECUTIVE_TURNS: 3,      // 连续回合数
+    },
+    // 民变四起
+    REBELLION: {
+      PROVINCES_WITH_CRITICAL_UNREST: 5,  // 危险民乱省份数量
+      TOTAL_UNREST_AVERAGE: 70,            // 平均民乱阈值
+    },
+    // 外敌入侵
+    INVASION: {
+      BORDER_THREAT: 90,         // 边患阈值
+      MILITARY_POWER: 20,        // 军力阈值（低于此值）
+    },
+    // 被废黜
+    DEPOSITION: {
+      LOYALTY_AVERAGE: 20,       // 平均忠诚度阈值
+      CRITICAL_PROVINCES: 10,    // 危险省份数量
+    },
   },
 };
 
@@ -160,4 +346,112 @@ export function resolveEffectValue(
 
   console.error('[gameConfig] 既没有 configKey 也没有 value，返回 0');
   return 0;
+}
+
+// ============================================
+// NPC 属性验证函数
+// ============================================
+
+/**
+ * 验证并修正 NPC 忠诚度值
+ * @param loyalty 原始忠诚度值
+ * @returns 修正后的忠诚度值
+ */
+export function validateNPCLoyalty(loyalty: number): number {
+  return Math.max(GAME_CONFIG.NPC.LOYALTY.MIN, Math.min(GAME_CONFIG.NPC.LOYALTY.MAX, loyalty));
+}
+
+/**
+ * 验证并修正 NPC 贪腐值
+ * @param corruption 原始贪腐值
+ * @returns 修正后的贪腐值
+ */
+export function validateNPCCorruption(corruption: number): number {
+  return Math.max(GAME_CONFIG.NPC.CORRUPTION.MIN, Math.min(GAME_CONFIG.NPC.CORRUPTION.MAX, corruption));
+}
+
+/**
+ * 验证并修正 NPC 能力值
+ * @param competence 原始能力值
+ * @returns 修正后的能力值
+ */
+export function validateNPCCompetence(competence: number): number {
+  return Math.max(GAME_CONFIG.NPC.COMPETENCE.MIN, Math.min(GAME_CONFIG.NPC.COMPETENCE.MAX, competence));
+}
+
+// ============================================
+// 省份属性验证函数
+// ============================================
+
+/**
+ * 验证并修正税率
+ * @param taxRate 原始税率
+ * @returns 修正后的税率
+ */
+export function validateTaxRate(taxRate: number): number {
+  return Math.max(GAME_CONFIG.PROVINCE.TAX_RATE.MIN, Math.min(GAME_CONFIG.PROVINCE.TAX_RATE.MAX, taxRate));
+}
+
+/**
+ * 验证并修正民乱值
+ * @param unrest 原始民乱值
+ * @returns 修正后的民乱值
+ */
+export function validateUnrest(unrest: number): number {
+  return Math.max(GAME_CONFIG.PROVINCE.UNREST.MIN, Math.min(GAME_CONFIG.PROVINCE.UNREST.MAX, unrest));
+}
+
+/**
+ * 验证并修正民心值
+ * @param morale 原始民心值
+ * @returns 修正后的民心值
+ */
+export function validateMorale(morale: number): number {
+  return Math.max(GAME_CONFIG.PROVINCE.MORALE.MIN, Math.min(GAME_CONFIG.PROVINCE.MORALE.MAX, morale));
+}
+
+/**
+ * 获取税率等级标签
+ * @param taxRate 税率
+ * @returns 税率等级标签
+ */
+export function getTaxRateLevelLabel(taxRate: number): string {
+  const levels = GAME_CONFIG.PROVINCE.TAX_RATE.LEVELS;
+  for (const [_, level] of Object.entries(levels)) {
+    if (taxRate >= level.min && taxRate < level.max) {
+      return level.label;
+    }
+  }
+  return '未知';
+}
+
+// ============================================
+// 国家属性验证函数
+// ============================================
+
+/**
+ * 验证并修正国家军力值
+ * @param power 原始军力值
+ * @returns 修正后的军力值
+ */
+export function validateMilitaryPower(power: number): number {
+  return Math.max(GAME_CONFIG.NATION.MILITARY_POWER.MIN, Math.min(GAME_CONFIG.NATION.MILITARY_POWER.MAX, power));
+}
+
+/**
+ * 验证并修正国家边患值
+ * @param threat 原始边患值
+ * @returns 修正后的边患值
+ */
+export function validateBorderThreat(threat: number): number {
+  return Math.max(GAME_CONFIG.NATION.BORDER_THREAT.MIN, Math.min(GAME_CONFIG.NATION.BORDER_THREAT.MAX, threat));
+}
+
+/**
+ * 验证并修正国家整体贪腐值
+ * @param corruption 原始贪腐值
+ * @returns 修正后的贪腐值
+ */
+export function validateOverallCorruption(corruption: number): number {
+  return Math.max(GAME_CONFIG.NATION.OVERALL_CORRUPTION.MIN, Math.min(GAME_CONFIG.NATION.OVERALL_CORRUPTION.MAX, corruption));
 }

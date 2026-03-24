@@ -11,11 +11,9 @@ import { accountingSystem } from '../engine/AccountingSystem';
 
 export class TaxSystem {
   private currentTurn: number = 1;
-  private currentDate: string = '崇祯元年正月';
 
-  setTurnInfo(turn: number, date: string): void {
+  setTurnInfo(turn: number, _date: string): void {
     this.currentTurn = turn;
-    this.currentDate = date;
   }
 
   /**
@@ -58,7 +56,13 @@ export class TaxSystem {
    */
   calculateTax(provinces: Province[]): TaxResult[] {
     // 这里简化处理，使用默认的 nationStats
-    const nationStats = { peopleMorale: 50 };
+    const nationStats: NationStats = {
+      peopleMorale: 50,
+      militaryPower: 50,
+      borderThreat: 30,
+      overallCorruption: 40,
+      agriculturalOutput: 60
+    };
     const results = this.calculateAllProvincesTax(provinces, nationStats);
     
     // 记录到 AccountingSystem（不直接修改数据库）

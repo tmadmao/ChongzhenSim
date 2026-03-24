@@ -162,8 +162,8 @@ export const useCourtStore = create<CourtStore>((set, get) => ({
           case 'nation':
             changeType = 'nation'
             break
-          case 'faction':
-            changeType = 'faction'
+          case 'military':
+            changeType = 'nation'
             break
           default:
             changeType = 'event'

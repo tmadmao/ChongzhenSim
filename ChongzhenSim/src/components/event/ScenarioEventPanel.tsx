@@ -1,13 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useGameStore } from '../../store/gameStore';
 import { eventBus } from '../../core/eventBus';
-import { changeQueue } from '../../engine/ChangeQueue';
 import { resolveEffectValue } from '../../config/gameConfig';
-import { createLogger } from '../../utils/logger';
 import type { ScriptedEvent, EventPriority } from '../../data/scenario/scriptedEvents';
 import type { OptionEffect } from '../../api/schemas';
-
-const logger = createLogger('ScenarioEventPanel');
 
 export function ScenarioEventPanel({ isVisible }: { isVisible: boolean }) {
   const { gameState, applyPlayerDecision } = useGameStore();
@@ -51,72 +47,7 @@ export function ScenarioEventPanel({ isVisible }: { isVisible: boolean }) {
     return null;
   }
 
-  /**
-   * 将 OptionEffect 转换为 ChangeQueue 请求并入队
-   */
-  const enqueueEffects = (effects: OptionEffect[], source: string): void => {
-    for (const effect of effects) {
-      // 解析数值：优先使用 configKey，否则使用 value
-      const resolvedValue = resolveEffectValue(
-        effect.configKey as keyof typeof import('../../config/gameConfig').GAME_CONFIG.EVENT_CONSTANTS | undefined,
-        effect.value
-      );
 
-      // 根据 mode 计算 delta 或 newValue
-      let delta: number | undefined;
-      let newValue: number | undefined;
-
-      if (effect.mode === 'delta') {
-        delta = resolvedValue;
-      } else {
-        newValue = resolvedValue;
-      }
-
-      // 确定 ChangeType
-      let changeType: import('../../engine/ChangeQueue').ChangeType;
-      switch (effect.type) {
-        case 'treasury':
-          changeType = 'treasury';
-          break;
-        case 'province':
-          changeType = 'province';
-          break;
-        case 'minister':
-        case 'official':
-          changeType = 'official';
-          break;
-        case 'nation':
-          changeType = 'nation';
-          break;
-        case 'faction':
-          changeType = 'faction';
-          break;
-        default:
-          changeType = 'event';
-      }
-
-      // 构建描述
-      const valueStr = effect.mode === 'delta'
-        ? `${resolvedValue >= 0 ? '+' : ''}${resolvedValue}`
-        : `=${resolvedValue}`;
-      const description = `${effect.description} (${valueStr})`;
-
-      // 入队
-      changeQueue.enqueue({
-        type: changeType,
-        target: effect.target,
-        field: effect.field,
-        delta,
-        newValue,
-        description,
-        source
-      });
-
-      // 打印入队日志
-      logger.info(`[Queue] 来自${source}，${effect.type}.${effect.field} 预计 ${valueStr}`);
-      console.log(`[Queue] 来自${source}，${effect.type}.${effect.field} 预计 ${valueStr}`);
-    }
-  };
 
   const handleChoice = (choiceId: string) => {
     setSelectedChoice(choiceId);
@@ -129,16 +60,19 @@ export function ScenarioEventPanel({ isVisible }: { isVisible: boolean }) {
     }
 
     // 显示效果预览（仅用于UI展示，实际入队在 applyPlayerDecision 中处理）
-    const effects: OptionEffect[] = selectedChoiceData.effects.map(e => ({
-      type: e.type as OptionEffect['type'],
-      target: e.target,
-      field: e.field,
-      // 支持新旧两种格式
-      value: 'delta' in e ? e.delta : 'value' in e ? e.value : undefined,
-      configKey: 'configKey' in e ? e.configKey : undefined,
-      mode: ('mode' in e ? e.mode : 'delta') as 'delta' | 'absolute',
-      description: e.description
-    }));
+    const effects: OptionEffect[] = selectedChoiceData.effects.map(e => {
+      const anyE = e as any;
+      return {
+        type: e.type as OptionEffect['type'],
+        target: e.target,
+        field: e.field,
+        // 支持新旧两种格式
+        value: anyE.delta !== undefined ? anyE.delta : anyE.value,
+        configKey: anyE.configKey,
+        mode: (anyE.mode || 'delta') as 'delta' | 'absolute',
+        description: e.description
+      };
+    });
 
     // 注意：效果入队在 applyPlayerDecision 中统一处理，避免重复入队
     console.log(`[ScenarioEventPanel] 选择选项: ${choiceId}, 效果数: ${effects.length}`);
@@ -148,7 +82,7 @@ export function ScenarioEventPanel({ isVisible }: { isVisible: boolean }) {
         type: 'event_choice',
         eventId: activeEvent.id,
         choiceId,
-        effects: selectedChoiceData.effects
+        effects: selectedChoiceData.effects as any
       });
       setSelectedChoice(null);
       setShowEffects(false);

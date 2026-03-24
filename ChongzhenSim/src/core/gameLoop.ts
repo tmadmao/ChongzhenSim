@@ -1,4 +1,4 @@
-import type { GameState, Province, NationStats, GameEffect, Minister } from './types';
+import type { GameState } from './types';
 import { emitGameEvent } from './eventBus';
 import { TaxSystem } from '../systems/taxSystem';
 import { FinanceSystem } from '../systems/financeSystem';
@@ -7,7 +7,6 @@ import { createLogger } from '../utils/logger';
 import { useCourtStore } from '../store/courtStore';
 import { accountingSystem } from '../engine/AccountingSystem';
 import { changeQueue } from '../engine/ChangeQueue';
-import { GAME_CONFIG } from '../config/gameConfig';
 
 const logger = createLogger('GameEngine');
 
@@ -359,12 +358,6 @@ export class GameLoop {
     return state;
   }
 
-  // 应用游戏效果 - 已废弃，所有效果应通过 ChangeQueue 入队
-  // 保留此方法仅用于向后兼容
-  private applyEffect(effect: GameEffect, state: GameState): GameState {
-    logger.warn('[applyEffect] 此方法已废弃，请使用 ChangeQueue.enqueue');
-    return state;
-  }
 }
 
 export function parseGameDate(date: string): { year: number; month: number } {

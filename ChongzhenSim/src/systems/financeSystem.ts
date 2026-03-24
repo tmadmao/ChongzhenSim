@@ -5,12 +5,10 @@ import { accountingSystem } from '../engine/AccountingSystem';
 
 export class FinanceSystem {
   private currentTurn: number = 1;
-  private currentDate: string = '崇祯元年正月';
   private initialTreasury: number = GAME_CONFIG.INITIAL.TREASURY;
 
-  setTurnInfo(turn: number, date: string): void {
+  setTurnInfo(turn: number, _date: string): void {
     this.currentTurn = turn;
-    this.currentDate = date;
   }
 
   calculateExpenses(state: GameState): ExpenseBreakdown {
@@ -48,7 +46,7 @@ export class FinanceSystem {
     };
   }
 
-  recordExpenses(expenses: ExpenseBreakdown): void {
+  recordExpenses(_expenses: ExpenseBreakdown): void {
     // 此方法不再直接写入数据库
     // 支出记录已在gameLoop.ts中通过accountingSystem统一处理
     // 保留此方法用于向后兼容

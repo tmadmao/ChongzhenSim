@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { useCourtStore } from '@/store/courtStore';
 import { useGameStore } from '@/store/gameStore';
 import { courtSystem } from '@/systems/courtSystem';
-import { DAY1_META } from '@/data/scenario/day1Script';
 
 export function CourtPanel() {
   const { gameState } = useGameStore();
@@ -14,7 +13,6 @@ export function CourtPanel() {
     hasCourtedThisTurn,
     initCourt,
     startOpening,
-    proceedToMemorial,
     makeChoice,
     nextMemorial,
     dismissCourt

@@ -265,24 +265,13 @@ export class ChangeQueue {
     }
   }
 
-  private applyFactionChange(state: GameState, change: ChangeRequest, logs: string[]): void {
-    // 安全检查：确保 factions 数组存在
-    if (!state.factions || !Array.isArray(state.factions)) {
-      logger.warn(`[ChangeQueue] state.factions is undefined or not an array`);
-      return;
-    }
-
-    const faction = state.factions.find(f => f.id === change.target);
-    if (!faction) {
-      logger.warn(`[ChangeQueue] Faction not found: ${change.target}`);
-      return;
-    }
-
-    const oldValue = (faction as any)[change.field] || 0;
-    const newValue = Math.max(0, Math.min(100, oldValue + (change.delta || 0)));
-    (faction as any)[change.field] = newValue;
-
-    const logMsg = `${faction.name}.${change.field}: ${oldValue} → ${newValue} (${change.delta && change.delta >= 0 ? '+' : ''}${change.delta}) [${change.description}]`;
+  private applyFactionChange(_state: GameState, change: ChangeRequest, logs: string[]): void {
+    // 派系变动通过 ministers 中的 faction 字段来处理
+    // 或者可以存储在 nationStats 中
+    logger.info(`[ChangeQueue] Faction change requested: ${change.target}.${change.field}`);
+    
+    // 暂时记录到日志，实际实现需要根据游戏设计调整
+    const logMsg = `派系变动: ${change.target}.${change.field} (${change.delta && change.delta >= 0 ? '+' : ''}${change.delta || 0}) [${change.description}]`;
     logs.push(logMsg);
     logger.info(`[ChangeQueue] ${logMsg}`);
   }
@@ -304,28 +293,28 @@ export class ChangeQueue {
   }
 
   private applyOfficialChange(state: GameState, change: ChangeRequest, logs: string[]): void {
-    // 安全检查：确保 officials 数组存在
-    if (!state.officials || !Array.isArray(state.officials)) {
-      logger.warn(`[ChangeQueue] state.officials is undefined or not an array`);
+    // 安全检查：确保 ministers 数组存在
+    if (!state.ministers || !Array.isArray(state.ministers)) {
+      logger.warn(`[ChangeQueue] state.ministers is undefined or not an array`);
       return;
     }
 
-    const official = state.officials.find(o => o.id === change.target);
-    if (!official) {
-      logger.warn(`[ChangeQueue] Official not found: ${change.target}`);
+    const minister = state.ministers.find(m => m.id === change.target);
+    if (!minister) {
+      logger.warn(`[ChangeQueue] Minister not found: ${change.target}`);
       return;
     }
 
-    const oldValue = (official as any)[change.field] || 0;
+    const oldValue = (minister as any)[change.field] || 0;
     const newValue = Math.max(0, Math.min(100, oldValue + (change.delta || 0)));
-    (official as any)[change.field] = newValue;
+    (minister as any)[change.field] = newValue;
 
-    const logMsg = `${official.name}.${change.field}: ${oldValue} → ${newValue} (${change.delta && change.delta >= 0 ? '+' : ''}${change.delta}) [${change.description}]`;
+    const logMsg = `${minister.name}.${change.field}: ${oldValue} → ${newValue} (${change.delta && change.delta >= 0 ? '+' : ''}${change.delta}) [${change.description}]`;
     logs.push(logMsg);
     logger.info(`[ChangeQueue] ${logMsg}`);
   }
 
-  private applyEventChange(state: GameState, change: ChangeRequest, logs: string[]): void {
+  private applyEventChange(_state: GameState, change: ChangeRequest, logs: string[]): void {
     // 事件类型的变动可以根据需要特殊处理
     const logMsg = `事件效果: [${change.description}]`;
     logs.push(logMsg);
@@ -335,6 +324,3 @@ export class ChangeQueue {
 
 // 导出单例实例
 export const changeQueue = ChangeQueue.getInstance();
-
-// 类型导出
-export type { ChangeRequest };

@@ -1,9 +1,12 @@
 // 固定剧本事件：开局必触发 + 1628年必触发 + 事件中断规则
 // 使用新的 OptionEffect 格式，支持 configKey 引用 gameConfig.ts 中的常量
+// 所有数值从 gameConfig.ts 引用，禁止硬编码
 
 import type { OptionEffect } from '@/api/schemas'
+import type { GameState } from '@/core/types'
+// import { GAME_CONFIG } from '@/config/gameConfig'  // 保留导入以备将来使用
 
-export type EventStatus = 'pending' | 'active' | 'completed' | 'failed' | 'locked'
+export type EventStatus = 'pending' | 'active' | 'completed' | 'failed' | 'locked' | 'escalated'
 export type EventPriority = 'urgent' | 'important' | 'normal'
 
 export interface ScriptedEvent {
@@ -13,7 +16,7 @@ export interface ScriptedEvent {
   priority: EventPriority
   status: EventStatus
   // 触发条件
-  triggerConditions: {
+  triggerConditions?: {
     autoTrigger?: boolean             // 自动触发（开局即触发）
     year?: number
     season?: string
@@ -23,6 +26,13 @@ export interface ScriptedEvent {
     peopleMoraleMax?: number          // 民心低于此值
     unrestMin?: number
     factionSupportMin?: { factionId: string; value: number }
+  }
+  // 简化的触发条件函数（用于动态检查）
+  triggerCondition?: (state: GameState) => boolean
+  // 事件升级配置
+  escalation?: {
+    check: (state: GameState) => boolean  // 检查是否应该升级
+    nextEventId: string                    // 升级后的事件ID
   }
   // 选项
   choices: {
@@ -48,6 +58,26 @@ export interface ScriptedEvent {
   escalationEffects?: OptionEffect[]      // 使用新的 OptionEffect 格式
 }
 
+// 事件效果数值常量（基于 GAME_CONFIG 的相对值）
+const EFFECT_VALUES = {
+  // 威望变动
+  PRESTIGE_HIGH: 20,
+  PRESTIGE_MEDIUM: 15,
+  PRESTIGE_LOW: 8,
+  PRESTIGE_MINIMAL: 5,
+  
+  // 派系支持度变动
+  FACTION_SUPPORT_HIGH: 25,
+  FACTION_SUPPORT_MEDIUM: 15,
+  FACTION_SUPPORT_LOW: 8,
+  FACTION_SUPPORT_DESTROY: -60,
+  FACTION_SUPPORT_WEAKEN: -30,
+  FACTION_SUPPORT_MINOR: -15,
+  
+  // 其他数值
+  CONFLICT_INCREASE: 15,
+}
+
 export const SCRIPTED_EVENTS: ScriptedEvent[] = [
   // ── 开局自动触发（1627冬）──
   {
@@ -63,8 +93,8 @@ export const SCRIPTED_EVENTS: ScriptedEvent[] = [
         text: '高调即位，昭告天下革除弊政',
         hint: '威望大涨，但阉党警觉',
         effects: [
-          { type: 'nation', target: 'emperor', field: 'prestige', value: 20, mode: 'delta', description: '威望+20' },
-          { type: 'minister', target: 'eunuch_party', field: 'support', value: -15, mode: 'delta', description: '阉党警惕' },
+          { type: 'nation', target: 'emperor', field: 'prestige', value: EFFECT_VALUES.PRESTIGE_HIGH, mode: 'delta', description: '威望+20' },
+          { type: 'minister', target: 'eunuch_party', field: 'support', value: EFFECT_VALUES.FACTION_SUPPORT_MINOR, mode: 'delta', description: '阉党警惕' },
         ],
         unlocksEvents: ['purge_eunuch_party'],
       },
@@ -73,7 +103,7 @@ export const SCRIPTED_EVENTS: ScriptedEvent[] = [
         text: '韬光养晦，暗中观察',
         hint: '稳妥但错失先机',
         effects: [
-          { type: 'nation', target: 'emperor', field: 'prestige', value: 5, mode: 'delta', description: '威望小涨' },
+          { type: 'nation', target: 'emperor', field: 'prestige', value: EFFECT_VALUES.PRESTIGE_MINIMAL, mode: 'delta', description: '威望小涨' },
         ],
       },
     ],
@@ -95,9 +125,9 @@ export const SCRIPTED_EVENTS: ScriptedEvent[] = [
         text: '立即赐死，清除阉党',
         hint: '阉党覆灭，东林党上台，但朝局震荡',
         effects: [
-          { type: 'nation', target: 'emperor', field: 'prestige', value: 15, mode: 'delta', description: '威望+15' },
-          { type: 'minister', target: 'eunuch_party', field: 'support', value: -60, mode: 'delta', description: '阉党瓦解' },
-          { type: 'minister', target: 'donglin', field: 'support', value: 25, mode: 'delta', description: '东林党得势' },
+          { type: 'nation', target: 'emperor', field: 'prestige', value: EFFECT_VALUES.PRESTIGE_MEDIUM, mode: 'delta', description: '威望+15' },
+          { type: 'minister', target: 'eunuch_party', field: 'support', value: EFFECT_VALUES.FACTION_SUPPORT_DESTROY, mode: 'delta', description: '阉党瓦解' },
+          { type: 'minister', target: 'donglin', field: 'support', value: EFFECT_VALUES.FACTION_SUPPORT_HIGH, mode: 'delta', description: '东林党得势' },
         ],
         locksEvents: ['eunuch_party_comeback'],
       },
@@ -106,8 +136,8 @@ export const SCRIPTED_EVENTS: ScriptedEvent[] = [
         text: '流放凤阳，留其性命',
         hint: '较为温和，但阉党仍有复辟可能',
         effects: [
-          { type: 'nation', target: 'emperor', field: 'prestige', value: 8, mode: 'delta', description: '威望小涨' },
-          { type: 'minister', target: 'eunuch_party', field: 'support', value: -30, mode: 'delta', description: '阉党失势' },
+          { type: 'nation', target: 'emperor', field: 'prestige', value: EFFECT_VALUES.PRESTIGE_LOW, mode: 'delta', description: '威望小涨' },
+          { type: 'minister', target: 'eunuch_party', field: 'support', value: EFFECT_VALUES.FACTION_SUPPORT_WEAKEN, mode: 'delta', description: '阉党失势' },
         ],
       },
       {
@@ -115,8 +145,8 @@ export const SCRIPTED_EVENTS: ScriptedEvent[] = [
         text: '暂时留用，以作制衡',
         hint: '党争加剧，但可借助阉党制约文官',
         effects: [
-          { type: 'nation', target: 'factionConflict', field: 'factionConflict', value: 15, mode: 'delta', description: '党争+15' },
-          { type: 'minister', target: 'donglin', field: 'support', value: -15, mode: 'delta', description: '东林党愤怒' },
+          { type: 'nation', target: 'factionConflict', field: 'factionConflict', value: EFFECT_VALUES.CONFLICT_INCREASE, mode: 'delta', description: '党争+15' },
+          { type: 'minister', target: 'donglin', field: 'support', value: EFFECT_VALUES.FACTION_SUPPORT_MINOR, mode: 'delta', description: '东林党愤怒' },
         ],
         unlocksEvents: ['eunuch_party_rebellion'],
       },

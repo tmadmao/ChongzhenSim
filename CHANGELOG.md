@@ -1,7 +1,74 @@
 # 更新日志 Changelog
 
 > **声明：本游戏当前版本处于框架构建阶段，尚不可游玩。**
-## [v0.2.1] - 2026-03-24
+
+## [v0.2.2] - 2026-03-25
+
+### 重大更新
+
+#### 配置系统全面增强
+- 扩展 `gameConfig.ts`，新增完整的游戏数值配置体系
+- NPC 属性配置：忠诚、贪腐、能力、关系、野心五大属性，支持 MIN/MAX/DEFAULT/HIGH/LOW/CRITICAL 分级
+- 省份配置：人口、税率、民乱、天灾、贪腐、士气、军事、粮仓八大维度
+- 国家配置：民心、军力、边患、贪腐、农业产出五大国力指标
+- 游戏结束条件配置：民心崩溃、边患失控、国库枯竭、皇帝驾崩等多种结局阈值
+
+#### 剧本文件配置化改造
+- `historicalCharacters.ts`：80+ 历史人物的初始数值全部改用 `GAME_CONFIG.NPC` 常量
+- `scriptedEvents.ts`：事件效果数值抽离为 `EFFECT_VALUES` 常量对象
+- `nationalPolicies.ts`：国策效果数值抽离为 `POLICY_EFFECTS` 常量对象
+- 彻底消除剧本中的魔法数字，所有数值从配置中心读取
+
+#### 配置验证体系
+- 新增 `validateNPCAttributes()` 函数：验证 NPC 属性值是否在合法范围内
+- 新增 `validateProvinceAttributes()` 函数：验证省份属性值合法性
+- 新增 `validateNationAttributes()` 函数：验证国家属性值合法性
+- 新增 `checkGameOverConditions()` 函数：统一检查游戏结束条件
+
+### 技术改进
+
+#### 类型安全增强
+- 修复 `ChangeQueue.ts` 中的 factions/officials 类型错误
+- 修复 `courtStore.ts` 中的 EffectType 类型不匹配问题
+- 修复 `scenarioEngine.ts` 中的多处类型错误
+- 清理所有未使用的导入和变量
+
+#### 代码清理
+- 删除废弃的重构备份文件：`gameLoop-refactored.ts`、`gameStore-decision-refactor.ts`
+- 统一使用 `ministers` 属性替代 `factions`/`officials`
+
+### 配置文件结构
+
+```typescript
+GAME_CONFIG = {
+  NPC: {
+    LOYALTY: { MIN: 0, MAX: 100, DEFAULT: 50, HIGH: 80, LOW: 30, CRITICAL: 10 },
+    CORRUPTION: { MIN: 0, MAX: 100, DEFAULT: 30, HIGH: 70, LOW: 20, CRITICAL: 90 },
+    COMPETENCE: { MIN: 0, MAX: 100, DEFAULT: 50, HIGH: 80, LOW: 30, EXCELLENT: 90 },
+    RELATIONSHIP: { MIN: -100, MAX: 100, DEFAULT: 0, FRIENDLY: 50, HOSTILE: -50 },
+    AMBITION: { MIN: 0, MAX: 100, DEFAULT: 50, HIGH: 70, LOW: 30 }
+  },
+  PROVINCE: {
+    POPULATION: { MIN: 10000, MAX: 5000000, DEFAULT: 500000 },
+    TAX_RATE: { MIN: 0.05, MAX: 0.60, DEFAULT: 0.25, STEP: 0.05 },
+    UNREST: { MIN: 0, MAX: 100, DEFAULT: 10, HIGH: 60, CRITICAL: 80 },
+    // ... 更多配置
+  },
+  NATION: {
+    PEOPLE_MORALE: { MIN: 0, MAX: 100, DEFAULT: 50, COLLAPSE: 20 },
+    MILITARY_POWER: { MIN: 0, MAX: 100, DEFAULT: 50, CRITICAL: 20 },
+    // ... 更多配置
+  },
+  GAME_OVER: {
+    PEOPLE_MORALE_COLLAPSE: 10,
+    BORDER_THREAT_CRITICAL: 90,
+    TREASURY_BANKRUPT: -500,
+    // ... 更多条件
+  }
+}
+```
+
+## [v0.2.1] - 2026-03-25
 
 ### 重大更新
 

@@ -1,6 +1,5 @@
-import type { GameState, GameEffect, Province } from '@/core/types'
+import type { GameState, GameEffect } from '@/core/types'
 import { SCRIPTED_EVENTS } from '@/data/scenario/scriptedEvents'
-import { FACTIONS } from '@/data/scenario/factions'
 import { HISTORICAL_CHARACTERS } from '@/data/scenario/historicalCharacters'
 import { NATIONAL_POLICIES } from '@/data/scenario/nationalPolicies'
 import { eventBus } from '@/core/eventBus'
@@ -50,7 +49,8 @@ export class ScenarioEngine {
       // 检查年份条件
       if (exitTriggers.year && currentTurn >= exitTriggers.year) {
         shouldExit = true
-        exitType = 'resignation'
+        // 如果角色有年龄且>=65，视为自然死亡
+        exitType = (character.age && character.age >= 65) ? 'death' : 'resignation'
       }
       
       // 检查回合数条件
@@ -69,9 +69,9 @@ export class ScenarioEngine {
         // 触发离场剧情
         this.triggerExitStory(character.id, exitType)
         
-        // 从官员列表中移除
-        newState.officials = newState.officials.filter(
-          o => o.id !== character.id
+        // 从大臣列表中移除
+        newState.ministers = newState.ministers.filter(
+          m => m.id !== character.id
         )
         
         // 更新角色状态
@@ -124,7 +124,8 @@ export class ScenarioEngine {
     let newState = { ...state }
     
     for (const policy of NATIONAL_POLICIES) {
-      if (policy.status === 'researching' && policy.progress >= policy.researchTurns) {
+      const progress = policy.progress || 0;
+      if (policy.status === 'researching' && progress >= policy.researchTurns) {
         policy.status = 'completed'
         policy.progress = policy.researchTurns
         
@@ -218,34 +219,38 @@ export class ScenarioEngine {
   /**
    * 将效果添加到变动队列
    * 不再直接修改游戏状态，而是进入队列等待回合结算
+   * 支持 GameEffect 和 OptionEffect 两种格式
    */
-  private queueEffect(effect: GameEffect, source: string): void {
+  private queueEffect(effect: GameEffect | any, source: string): void {
     try {
-      console.log(`[ScenarioEngine] queueEffect called:`, { type: effect.type, target: effect.target, field: effect.field, delta: effect.delta, source });
+      console.log(`[ScenarioEngine] queueEffect called:`, { type: effect.type, target: effect.target, field: effect.field, source });
+      
+      // 解析数值：优先使用 delta，否则使用 value
+      const delta = effect.delta !== undefined ? effect.delta : effect.value;
       
       switch (effect.type) {
         case 'treasury':
           if (effect.target === 'treasury' && (effect.field === 'gold' || effect.field === 'grain')) {
-            console.log(`[ScenarioEngine] Adding treasury effect to queue:`, { field: effect.field, delta: effect.delta });
+            console.log(`[ScenarioEngine] Adding treasury effect to queue:`, { field: effect.field, delta });
             
             // 添加到变动队列
             changeQueue.enqueue({
               type: 'treasury',
               target: effect.field,
               field: effect.field,
-              delta: effect.delta,
+              delta,
               description: effect.description || '国库变动',
               source
             })
             
             // 同时记录到中央结算系统（用于财务计算）
             if (effect.field === 'gold') {
-              if (effect.delta > 0) {
-                console.log(`[ScenarioEngine] Adding income to accounting system:`, effect.delta);
-                accountingSystem.addIncome(effect.description || '收入', effect.delta, source)
-              } else if (effect.delta < 0) {
-                console.log(`[ScenarioEngine] Adding expense to accounting system:`, Math.abs(effect.delta));
-                accountingSystem.addExpense(effect.description || '支出', Math.abs(effect.delta), source)
+              if (delta > 0) {
+                console.log(`[ScenarioEngine] Adding income to accounting system:`, delta);
+                accountingSystem.addIncome(effect.description || '收入', delta, source)
+              } else if (delta < 0) {
+                console.log(`[ScenarioEngine] Adding expense to accounting system:`, Math.abs(delta));
+                accountingSystem.addExpense(effect.description || '支出', Math.abs(delta), source)
               }
             }
           }
@@ -256,7 +261,7 @@ export class ScenarioEngine {
             type: 'province',
             target: effect.target,
             field: effect.field,
-            delta: effect.delta,
+            delta,
             description: effect.description || '省份变动',
             source
           })
@@ -267,7 +272,7 @@ export class ScenarioEngine {
             type: 'faction',
             target: effect.target,
             field: effect.field,
-            delta: effect.delta,
+            delta,
             description: effect.description || '派系变动',
             source
           })
@@ -278,7 +283,7 @@ export class ScenarioEngine {
             type: 'nation',
             target: effect.target,
             field: effect.field,
-            delta: effect.delta,
+            delta,
             description: effect.description || '国家属性变动',
             source
           })
