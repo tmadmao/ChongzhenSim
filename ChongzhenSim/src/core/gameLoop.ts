@@ -2,7 +2,14 @@ import type { GameState } from './types';
 import { emitGameEvent } from './eventBus';
 import { TaxSystem } from '../systems/taxSystem';
 import { FinanceSystem } from '../systems/financeSystem';
-import { insertGameSnapshot, generateId, saveToLocalStorage, insertTransaction } from '../db/database';
+import { 
+  insertGameSnapshot, 
+  generateId, 
+  saveToLocalStorage, 
+  insertTransaction,
+  getLatestState,
+  getAllProvinces
+} from '../db/database';
 import { createLogger } from '../utils/logger';
 import { useCourtStore } from '../store/courtStore';
 import { accountingSystem } from '../engine/AccountingSystem';
@@ -27,38 +34,45 @@ export class GameLoop {
 
     let state = JSON.parse(JSON.stringify(currentState)); // 深拷贝
     const logs: string[] = [];
+    let treasuryChanges: Array<{ delta: number; description: string; source: string }> = []; // 暂存国库变动
 
-    // ==================== Step A: 执行 changeQueue.applyAll() ====================
-    // 处理玩家本回合的所有选择（事件效果、税率调整等）
-    logger.info('[Step A] 开始应用变动队列');
+    // ==================== Step 1: 應用變動 (Apply Changes) ====================
+    // 統一架構：遍歷 ChangeQueue，將所有累積的變動寫入 SQL 數據庫
+    logger.info('[Step 1] 開始應用變動隊列');
     try {
       const queueLength = changeQueue.length;
-      logger.info(`[Step A] 队列中有 ${queueLength} 个待处理变动`);
-
+      logger.info(`[Step 1] 队列中有 ${queueLength} 个待处理变动`);
+      
       if (queueLength > 0) {
         const { newState, logs: changeLogs, appliedCount } = changeQueue.applyAll(state);
         state = newState;
         logs.push(...changeLogs);
 
-        logger.info(`[Step A] 成功应用 ${appliedCount} 个变动`, {
+        logger.info(`[Step 1] 成功应用 ${appliedCount} 个变动`, {
           queueLength,
           appliedCount
         });
 
+        // 暂存国库变动，等 Step 2 计算完常规收支后再添加
+        treasuryChanges = changeQueue.getTreasuryChanges();
+        if (treasuryChanges.length > 0) {
+          logger.info(`[Step 1] 从 ChangeQueue 获取 ${treasuryChanges.length} 个国库变动，暂存等待 Step 2 后添加`, treasuryChanges);
+        }
+
         // 显示队列统计
         const stats = changeQueue.getStats();
-        logger.info('[Step A] 变动统计', stats);
+        logger.info('[Step 1] 变动统计', stats);
       } else {
-        logger.info('[Step A] 队列为空，无变动需要应用');
+        logger.info('[Step 1] 队列为空，无变动需要应用');
       }
     } catch (error) {
-      logger.error('[Step A] 应用变动队列失败:', error);
+      logger.error('[Step 1] 应用变动队列失败:', error);
       throw error;
     }
 
-    // ==================== Step B: 执行 AccountingSystem.calculate() ====================
-    // 计算常规税收和维护费
-    logger.info('[Step B] 开始计算常规收支');
+    // ==================== Step 2: 系統運算 (System Tick) ====================
+    // 統一架構：調用 AccountingSystem，根據數據庫當前數值計算本季收入/支出，並更新數據庫
+    logger.info('[Step 2] 開始計算常規收支');
     try {
       this.taxSystem.setTurnInfo(state.turn, state.date);
       this.financeSystem.setTurnInfo(state.turn, state.date);
@@ -83,7 +97,7 @@ export class GameLoop {
       accountingSystem.addExpense('边境防御费用', expenses.border, '常规支出');
       accountingSystem.addExpense('官员贪腐造成的财政损失', expenses.corruption, '常规支出');
 
-      logger.info('[Step B] 常规收支计算完成', {
+      logger.info('[Step 2] 常规收支计算完成', {
         totalTax,
         totalExpense: expenses.total,
         netIncome: totalTax - expenses.total
@@ -93,13 +107,34 @@ export class GameLoop {
       logs.push(`常规支出：${expenses.total.toFixed(1)} 万两`);
 
     } catch (error) {
-      logger.error('[Step B] 计算常规收支失败:', error);
+      logger.error('[Step 2] 计算常规收支失败:', error);
       throw error;
     }
 
-    // ==================== Step C: 合并 A 和 B，执行唯一一次数据库 UPDATE ====================
-    logger.info('[Step C] 开始合并并写入数据库');
+    // ==================== Step C: 寫入數據庫 (Write to DB) ====================
+    logger.info('[Step C] 開始寫入數據庫');
     try {
+      // 先添加暂存的朝堂决策国库变动到 AccountingSystem
+      if (treasuryChanges.length > 0) {
+        logger.info(`[Step C] 添加 ${treasuryChanges.length} 个朝堂决策国库变动到 AccountingSystem`);
+        for (const change of treasuryChanges) {
+          if (change.delta > 0) {
+            accountingSystem.addIncome(
+              change.description,
+              change.delta,
+              '朝堂决策'
+            );
+          } else if (change.delta < 0) {
+            accountingSystem.addExpense(
+              change.description,
+              Math.abs(change.delta),
+              '朝堂决策'
+            );
+          }
+          logger.info(`[Step C] 添加到 AccountingSystem: ${change.description} ${change.delta >= 0 ? '+' : ''}${change.delta}`);
+        }
+      }
+      
       // 获取 AccountingSystem 的总账
       const ledger = accountingSystem.getLedger();
 
@@ -158,11 +193,42 @@ export class GameLoop {
 
       logger.info('[Step C] 数据库写入完成');
 
-      // 更新 financeStore
+      // 添加到日志
+      logs.push(`财务结算：净 ${ledger.netChange >= 0 ? '收入' : '支出'} ${Math.abs(ledger.netChange).toFixed(1)} 万两`);
+
+    } catch (error) {
+      logger.error('[Step C] 写入数据库失败:', error);
+      throw error;
+    }
+
+    // ==================== Step 3: 持久化同步 (Sync Store) ====================
+    // 統一架構：從數據庫讀取最新數值，調用 store.setState() 覆蓋 Zustand
+    logger.info('[Step 3] 開始持久化同步');
+    try {
+      // 從數據庫讀取最新狀態
+      const latestState = getLatestState();
+      const dbProvinces = getAllProvinces();
+      
+      logger.info('[Step 3] 從數據庫讀取最新狀態', {
+        dbGold: latestState.treasury.gold,
+        dbProvincesCount: dbProvinces.length
+      });
+
+      // 同步到 state
+      state.treasury.gold = latestState.treasury.gold;
+      state.treasury.grain = latestState.treasury.grain;
+      
+      // 同步省份數據（如果數據庫中有）
+      if (dbProvinces.length > 0) {
+        state.provinces = dbProvinces;
+      }
+
+      // 同步到 Zustand Store
       try {
         const gameStoreModule = await import('@/store/gameStore') as any;
         const gameStore = gameStoreModule.useGameStore.getState();
         if (gameStore && gameStore.setCurrentLedger) {
+          const ledger = accountingSystem.getLedger();
           gameStore.setCurrentLedger(ledger);
         }
 
@@ -176,49 +242,57 @@ export class GameLoop {
             financeStore.loadFinanceData();
           }
         }
+
+        const provinceStoreModule = await import('@/store/provinceStore') as any;
+        const provinceStore = provinceStoreModule.useProvinceStore.getState();
+        if (provinceStore && provinceStore.loadProvinces) {
+          provinceStore.loadProvinces();
+        }
+
+        logger.info('[Step 3] Zustand Store 同步完成');
       } catch (error) {
-        logger.error('[Step C] 更新 financeStore 失败:', error);
+        logger.error('[Step 3] 更新 Zustand Store 失败:', error);
       }
 
-      // 添加到日志
-      logs.push(`财务结算：净 ${ledger.netChange >= 0 ? '收入' : '支出'} ${Math.abs(ledger.netChange).toFixed(1)} 万两`);
       logs.push(`国库余额：${state.treasury.gold.toFixed(1)} 万两`);
+      logger.info('[Step 3] 持久化同步完成');
 
     } catch (error) {
-      logger.error('[Step C] 写入数据库失败:', error);
+      logger.error('[Step 3] 持久化同步失败:', error);
       throw error;
     }
 
-    // ==================== Step D: 清空队列，进入下一回合 ====================
-    logger.info('[Step D] 清空队列，准备进入下一回合');
+    // ==================== Step 4: 清空隊列 (Clear Queue) ====================
+    // 統一架構：重置 ChangeQueue
+    logger.info('[Step 4] 清空隊列，準備進入下一回合');
     try {
       // 清空变动队列
       const queueLength = changeQueue.length;
       changeQueue.clear();
-      logger.info(`[Step D] 变动队列已清空（原长度: ${queueLength}）`);
+      logger.info(`[Step 4] 变动队列已清空（原长度: ${queueLength}）`);
 
       // 重置 AccountingSystem（为下一回合做准备）
       accountingSystem.resetLedger();
-      logger.info('[Step D] AccountingSystem 已重置');
+      logger.info('[Step 4] AccountingSystem 已重置');
 
       // 检查并重置朝堂状态
       try {
         const courtStore = useCourtStore.getState();
         if (courtStore) {
           courtStore.resetCourt();
-          logger.debug('[Step D] 朝堂状态已重置');
+          logger.debug('[Step 4] 朝堂状态已重置');
         }
       } catch (error) {
-        logger.error('[Step D] 重置朝堂状态失败:', error);
+        logger.error('[Step 4] 重置朝堂状态失败:', error);
       }
 
       // 触发回合结束事件
       emitGameEvent('turn:end', { turn: state.turn, logs });
 
-      logger.info('[Step D] 回合结束处理完成');
+      logger.info('[Step 4] 回合结束处理完成');
 
     } catch (error) {
-      logger.error('[Step D] 回合结束处理失败:', error);
+      logger.error('[Step 4] 回合结束处理失败:', error);
       throw error;
     }
 

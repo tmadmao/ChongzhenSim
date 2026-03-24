@@ -24,12 +24,22 @@ const Loading = () => (
   </div>
 );
 
-import { initDatabase } from './db/database';
+import { initDatabase, getLatestState } from './db/database';
 import provincesData from './data/provinces.json';
 import charactersData from './data/characters.json';
 import type { Province, Minister, MinisterDepartment, Region } from './core/types';
 
 const STORAGE_VERSION = 'v2.0';
+
+// LoadingScreen 組件
+const LoadingScreen = ({ message }: { message: string }) => (
+  <div className="min-h-screen flex items-center justify-center bg-palace-bg">
+    <div className="palace-panel p-8 text-center">
+      <div className="animate-spin w-12 h-12 border-4 border-palace-gold border-t-transparent rounded-full mx-auto mb-4"></div>
+      <p className="text-palace-text-muted">{message}</p>
+    </div>
+  </div>
+);
 
 function App() {
   const [isDataLoaded, setIsDataLoaded] = useState(false);
@@ -39,6 +49,11 @@ function App() {
   const [showScenarioEvent] = useState(true);
   const [dbReady, setDbReady] = useState(false);
   const [needsNewGame, setNeedsNewGame] = useState(false);
+  const [financePanelCollapsed, setFinancePanelCollapsed] = useState(false);
+  const [logPanelCollapsed, setLogPanelCollapsed] = useState(false);
+  // 統一架構：初始化狀態
+  const [isInitialized, setIsInitialized] = useState(false);
+  const [initMessage, setInitMessage] = useState('正在初始化...');
   
   const { 
     gameState, 
@@ -66,17 +81,43 @@ function App() {
     }
   }, []);
 
+  // 統一架構：預加載順序 - Init SQL.js -> Load Initial Script -> Sync to Zustand -> Render UI
   useEffect(() => {
-    const initDb = async () => {
+    const initApp = async () => {
       try {
+        // Step 1: Init SQL.js
+        setInitMessage('正在加載數據庫...');
         await initDatabase();
         setDbReady(true);
+        console.log('[App] Database initialized');
+
+        // Step 2: 檢查是否需要加載初始數據
+        setInitMessage('正在檢查遊戲數據...');
+        const latestState = getLatestState();
+        console.log('[App] Latest state loaded:', {
+          provincesCount: latestState.provinces.length,
+          treasuryGold: latestState.treasury.gold
+        });
+
+        // Step 3: Sync to Zustand（如果已有數據）
+        if (latestState.provinces.length > 0) {
+          setInitMessage('正在同步遊戲數據...');
+          loadProvinces();
+          loadFinanceData();
+          setIsDataLoaded(true);
+          console.log('[App] Data synced to stores');
+        }
+
+        // Step 4: 標記初始化完成
+        setIsInitialized(true);
+        console.log('[App] Initialization complete');
       } catch (err) {
-        console.error('[App] Database init failed:', err);
+        console.error('[App] Initialization failed:', err);
+        setInitMessage('初始化失敗，請刷新頁面重試');
       }
     };
-    initDb();
-  }, []);
+    initApp();
+  }, [loadProvinces, loadFinanceData]);
 
   useEffect(() => {
     if (gameState && dbReady && !isDataLoaded && !isLoading) {
@@ -120,6 +161,11 @@ function App() {
   };
 
 
+
+  // 統一架構：Loading 門戶 - 只有當 SQL.js 初始化完成後才渲染遊戲主體
+  if (!isInitialized) {
+    return <LoadingScreen message={initMessage} />;
+  }
 
   if (error) {
     return (
@@ -188,14 +234,37 @@ function App() {
         }
         rightPanel={
           <div className="h-full flex flex-col">
-            <div className="flex-1 overflow-hidden">
+            <div className={`overflow-hidden transition-all duration-300 ${
+              financePanelCollapsed ? 'h-8' : logPanelCollapsed ? 'flex-1' : 'flex-1'
+            }`}>
               <Suspense fallback={<Loading />}>
-                <FinancePanel />
+                <FinancePanel 
+                  isCollapsed={financePanelCollapsed}
+                  onToggle={() => {
+                    setFinancePanelCollapsed(!financePanelCollapsed);
+                    if (!financePanelCollapsed && logPanelCollapsed) {
+                      setLogPanelCollapsed(false);
+                    }
+                  }}
+                />
               </Suspense>
             </div>
-            <div className="flex-1 overflow-hidden border-t border-palace-border">
+            {!financePanelCollapsed && !logPanelCollapsed && (
+              <div className="border-t border-palace-border"></div>
+            )}
+            <div className={`overflow-hidden transition-all duration-300 ${
+              logPanelCollapsed ? 'h-8' : financePanelCollapsed ? 'flex-1' : 'flex-1'
+            }`}>
               <Suspense fallback={<Loading />}>
-                <LogPanel />
+                <LogPanel 
+                  isCollapsed={logPanelCollapsed}
+                  onToggle={() => {
+                    setLogPanelCollapsed(!logPanelCollapsed);
+                    if (!logPanelCollapsed && financePanelCollapsed) {
+                      setFinancePanelCollapsed(false);
+                    }
+                  }}
+                />
               </Suspense>
             </div>
           </div>

@@ -46,7 +46,7 @@ export function CourtPanel() {
   };
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
+    <div className="h-full max-h-full flex flex-col overflow-hidden">
       {/* 标题栏 */}
       <div className="panel-decorated bg-palace-bg-light border-b border-palace-border p-4 flex justify-between items-center flex-shrink-0">
         <div>
@@ -60,7 +60,7 @@ export function CourtPanel() {
       </div>
 
       {/* 主体区域 */}
-      <div className="flex-1 overflow-y-auto p-6 palace-scrollbar">
+      <div className="flex-1 overflow-y-auto p-6 palace-scrollbar min-h-0">
         {phase === 'closed' && <CourtEntrance onStartCourt={handleStartCourt} hasCourtedThisTurn={hasCourtedThisTurn} />}
         {phase === 'opening' && <CourtOpening />}
         {phase === 'memorial' && (

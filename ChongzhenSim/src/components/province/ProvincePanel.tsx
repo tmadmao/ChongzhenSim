@@ -61,8 +61,8 @@ export function ProvincePanel() {
   };
 
   return (
-    <div className="palace-panel panel-decorated h-full p-4">
-      <div className="flex items-center justify-between mb-4">
+    <div className="palace-panel panel-decorated h-full p-4 flex flex-col">
+      <div className="flex items-center justify-between mb-4 flex-shrink-0">
         <h2 className="palace-title text-lg panel-title-decorated">天下诸省</h2>
         {alertCount > 0 && (
           <span className="palace-badge palace-badge-red glow-pulse">
@@ -71,7 +71,7 @@ export function ProvincePanel() {
         )}
       </div>
 
-      <div className="flex gap-2 mb-4">
+      <div className="flex gap-2 mb-4 flex-shrink-0">
         <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value as SortBy)}
@@ -98,7 +98,7 @@ export function ProvincePanel() {
         </select>
       </div>
 
-      <div className="space-y-2 max-h-[calc(100vh-320px)] overflow-y-auto palace-scrollbar">
+      <div className="space-y-2 flex-1 overflow-y-auto palace-scrollbar min-h-0">
         {sortedProvinces.map(province => {
           const hasAlert = province.civilUnrest > 70 || province.disasterLevel >= 3;
           const isSelected = selectedProvinceId === province.id;

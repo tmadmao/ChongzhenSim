@@ -16,8 +16,8 @@ interface FinanceStore {
 }
 
 const initialTreasury: Treasury = {
-  gold: 800,
-  grain: 500,
+  gold: 0,
+  grain: 0,
   transactions: []
 };
 
@@ -35,8 +35,8 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
       set({
         recentTransactions: transactions,
         treasury: {
-          gold: totalGold > 0 ? totalGold + 800 : 800,
-          grain: 500,
+          gold: totalGold,
+          grain: 0,
           transactions
         }
       });

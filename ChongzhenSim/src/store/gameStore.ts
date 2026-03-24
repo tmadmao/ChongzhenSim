@@ -10,11 +10,14 @@ import {
   insertProvinces, 
   getAllProvinces, 
   saveToLocalStorage,
-  clearDatabase
+  clearDatabase,
+  insertTransaction,
+  generateId
 } from '../db/database';
 import { createLogger } from '../utils/logger';
 import { useProvinceStore } from './provinceStore';
 import { useFinanceStore } from './financeStore';
+import { ChangeType } from '../core/fieldKeys';
 
 const logger = createLogger('GameStore');
 
@@ -86,6 +89,19 @@ export const useGameStore = create<GameStore>()(
           console.log('[GameStore] initGame: inserting', provinces.length, 'provinces');
           insertProvinces(provinces);
           console.log('[GameStore] initGame: insertProvinces done');
+          
+          console.log('[GameStore] initGame: inserting initial treasury transaction');
+          insertTransaction({
+            id: generateId(),
+            turn: 1,
+            date: '崇祯1年1月',
+            type: 'income',
+            category: '初始資金',
+            amount: initialTreasury.gold,
+            description: '大明國庫初始資金',
+            createdAt: Date.now()
+          });
+          console.log('[GameStore] initGame: initial treasury transaction inserted');
           
           const gameState: GameState = {
             turn: 1,
@@ -312,7 +328,7 @@ export const useGameStore = create<GameStore>()(
               if (policy && policy.cost > 0) {
                 // 将国策费用添加到ChangeQueue
                 changeQueue.enqueue({
-                  type: 'treasury',
+                  type: ChangeType.TREASURY,
                   target: 'treasury',
                   field: 'gold',
                   delta: -policy.cost,
@@ -508,7 +524,7 @@ export const useGameStore = create<GameStore>()(
         
         // 1. 税率变动（使用 newValue 模式，因为这是绝对值）
         changeQueue.enqueue({
-          type: 'province',
+          type: ChangeType.PROVINCE,
           target: provinceId,
           field: 'taxRate',
           newValue: clampedRate, // 新值（绝对值）
@@ -526,7 +542,7 @@ export const useGameStore = create<GameStore>()(
         
         if (civilUnrestDelta !== 0) {
           changeQueue.enqueue({
-            type: 'province',
+            type: ChangeType.PROVINCE,
             target: provinceId,
             field: 'civilUnrest',
             delta: civilUnrestDelta,

@@ -1,19 +1,26 @@
 import type { ReactNode } from 'react';
-import { useThemeStore } from '../../store/themeStore';
 
 interface LayoutProps {
   children: ReactNode;
   statusBar: ReactNode;
   leftPanel: ReactNode;
   rightPanel: ReactNode;
+  rightPanelCollapsed?: boolean;
+  onToggleRightPanel?: () => void;
   bottomBar: ReactNode;
 }
 
-export function Layout({ children, statusBar, leftPanel, rightPanel, bottomBar }: LayoutProps) {
-  const { theme, toggleTheme } = useThemeStore();
-
+export function Layout({ 
+  children, 
+  statusBar, 
+  leftPanel, 
+  rightPanel, 
+  rightPanelCollapsed = false, 
+  onToggleRightPanel,
+  bottomBar 
+}: LayoutProps) {
   return (
-    <div className="min-h-screen flex flex-col bg-palace-bg">
+    <div className="h-screen max-h-screen flex flex-col bg-palace-bg overflow-hidden">
       <header className="h-16 flex-shrink-0">
         {statusBar}
       </header>
@@ -23,11 +30,27 @@ export function Layout({ children, statusBar, leftPanel, rightPanel, bottomBar }
           {leftPanel}
         </aside>
 
-        <section className="flex-1 overflow-hidden">
+        <section className="flex-1 overflow-hidden relative">
           {children}
+          
+          {/* 右侧面板切换按钮 - 放在更显眼的位置 */}
+          {onToggleRightPanel && (
+            <button
+              onClick={onToggleRightPanel}
+              className="absolute top-4 right-4 z-50 w-12 h-12 rounded-full palace-button-gold flex items-center justify-center text-xl shadow-xl hover:scale-110 transition-transform border-2 border-palace-gold"
+              title={rightPanelCollapsed ? '展开右侧面板' : '收起右侧面板'}
+            >
+              {rightPanelCollapsed ? '📋' : '✕'}
+            </button>
+          )}
         </section>
 
-        <aside className="w-72 flex-shrink-0 overflow-y-auto palace-scrollbar">
+        {/* 右侧面板 - 支持收缩/展开 */}
+        <aside 
+          className={`flex-shrink-0 overflow-y-auto palace-scrollbar transition-all duration-300 ${
+            rightPanelCollapsed ? 'w-0 overflow-hidden' : 'w-72'
+          }`}
+        >
           {rightPanel}
         </aside>
       </main>
@@ -35,14 +58,6 @@ export function Layout({ children, statusBar, leftPanel, rightPanel, bottomBar }
       <footer className="h-20 flex-shrink-0">
         {bottomBar}
       </footer>
-
-      <button
-        onClick={toggleTheme}
-        className="fixed bottom-24 right-4 w-10 h-10 rounded-full palace-button-outline flex items-center justify-center text-lg"
-        title={theme === 'dark' ? '切换到白色简约' : '切换到华贵暗金'}
-      >
-        {theme === 'dark' ? '☀️' : '🌙'}
-      </button>
     </div>
   );
 }

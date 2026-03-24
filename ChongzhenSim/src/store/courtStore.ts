@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { CourtMemorial, MemorialChoice, DAY1_META } from '../data/scenario/day1Script'
 import type { GameEffect } from '../core/types'
+import { ChangeType } from '../core/fieldKeys'
 
 // 单次选择记录
 export interface ChoiceRecord {
@@ -114,7 +115,6 @@ export const useCourtStore = create<CourtStore>((set, get) => ({
     // 立即将效果提交到 ChangeQueue（不再等待退朝）
     if (allEffects.length > 0) {
       const { changeQueue } = await import('../engine/ChangeQueue')
-      const { accountingSystem } = await import('../engine/AccountingSystem')
       const { resolveEffectValue } = await import('../config/gameConfig')
 
       console.log(`[CourtStore] 选择「${choice.text}」，立即提交 ${allEffects.length} 个效果到 ChangeQueue`)
@@ -148,25 +148,25 @@ export const useCourtStore = create<CourtStore>((set, get) => ({
         }
 
         // 确定 ChangeType
-        let changeType: import('../engine/ChangeQueue').ChangeType
+        let changeType: ChangeType
         switch (effect.type) {
           case 'treasury':
-            changeType = 'treasury'
+            changeType = ChangeType.TREASURY
             break
           case 'province':
-            changeType = 'province'
+            changeType = ChangeType.PROVINCE
             break
           case 'minister':
-            changeType = 'official'
+            changeType = ChangeType.OFFICIAL
             break
           case 'nation':
-            changeType = 'nation'
+            changeType = ChangeType.NATION
             break
           case 'military':
-            changeType = 'nation'
+            changeType = ChangeType.NATION
             break
           default:
-            changeType = 'event'
+            changeType = ChangeType.EVENT
         }
 
         // 添加到 ChangeQueue
@@ -181,23 +181,6 @@ export const useCourtStore = create<CourtStore>((set, get) => ({
         })
 
         console.log(`[ChangeQueue] 已加入队列: ${effect.type}.${effect.field} ${mode === 'delta' ? (delta && delta >= 0 ? '+' : '') : '='}${resolvedValue}`)
-
-        // 财务效果同时记录到 AccountingSystem
-        if (effect.type === 'treasury' && effect.field === 'gold' && delta !== undefined) {
-          if (delta > 0) {
-            accountingSystem.addIncome(
-              effect.description || '朝堂收入',
-              delta,
-              '朝堂决策'
-            )
-          } else if (delta < 0) {
-            accountingSystem.addExpense(
-              effect.description || '朝堂支出',
-              Math.abs(delta),
-              '朝堂决策'
-            )
-          }
-        }
       }
 
       console.log(`[CourtStore] 已提交 ${allEffects.length} 个效果到 ChangeQueue`)

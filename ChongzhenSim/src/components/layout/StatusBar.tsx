@@ -145,7 +145,7 @@ export function StatusBar() {
   const dateInfo = parseDateWithDay(gameState.date || '崇祯元年正月', gameState.turn || 1);
 
   return (
-    <div className="palace-panel panel-decorated h-full flex items-center justify-between px-6">
+    <div className="h-full flex items-center justify-between px-6">
       <div className="flex items-center gap-6">
         <div>
           <h1 className="palace-title text-xl panel-title-decorated">崇祯{dateInfo.year}</h1>

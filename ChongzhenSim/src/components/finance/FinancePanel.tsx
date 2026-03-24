@@ -14,7 +14,12 @@ import {
 
 type TabType = 'overview' | 'chart' | 'ranking';
 
-export function FinancePanel() {
+interface FinancePanelProps {
+  isCollapsed?: boolean;
+  onToggle?: () => void;
+}
+
+export function FinancePanel({ isCollapsed = false, onToggle }: FinancePanelProps) {
   const { treasury, recentTransactions, chartData, financialHealth } = useFinanceStore();
   const { gameState } = useGameStore();
   const [activeTab, setActiveTab] = useState<TabType>('overview');
@@ -69,11 +74,36 @@ export function FinancePanel() {
     return null;
   };
 
-  return (
-    <div className="palace-panel panel-decorated h-full p-4">
-      <h2 className="palace-title text-lg mb-4 panel-title-decorated">财政总览</h2>
+  // 收缩状态下只显示一个小横条
+  if (isCollapsed) {
+    return (
+      <div
+        className="h-full w-full bg-palace-bg-light/50 border-b border-palace-border cursor-pointer hover:bg-palace-bg-light transition-colors flex items-center justify-between px-4"
+        onClick={onToggle}
+        title="点击展开财政总览"
+      >
+        <span className="palace-title text-xs">财政总览</span>
+        <span className="text-palace-text-muted">▼</span>
+      </div>
+    );
+  }
 
-      <div className="flex gap-2 mb-4">
+  return (
+    <div className="palace-panel panel-decorated h-full p-4 flex flex-col">
+      <div className="flex items-center justify-between mb-4 flex-shrink-0">
+        <h2 className="palace-title text-lg panel-title-decorated">财政总览</h2>
+        {onToggle && (
+          <button
+            onClick={onToggle}
+            className="text-palace-text-muted hover:text-palace-gold transition-colors"
+            title="收缩"
+          >
+            ▲
+          </button>
+        )}
+      </div>
+
+      <div className="flex gap-2 mb-4 flex-shrink-0">
         {(['overview', 'chart', 'ranking'] as TabType[]).map(tab => (
           <button
             key={tab}
@@ -90,8 +120,8 @@ export function FinancePanel() {
       </div>
 
       {activeTab === 'overview' && (
-        <div className="space-y-4">
-          <div className="stat-card glow-pulse">
+        <div className="space-y-4 flex-1 overflow-y-auto palace-scrollbar min-h-0">
+          <div className="stat-card glow-pulse flex-shrink-0">
             <p className="stat-card-label">国库银两</p>
             <p className="stat-card-value text-palace-gold">
               {Math.floor(treasury.gold).toLocaleString()}
@@ -99,7 +129,7 @@ export function FinancePanel() {
             <p className="text-palace-text-muted text-xs">万两</p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3 flex-shrink-0">
             <div className="stat-card">
               <p className="stat-card-label">粮仓</p>
               <p className="stat-card-value text-lg">{treasury.grain.toLocaleString()}</p>
@@ -113,13 +143,13 @@ export function FinancePanel() {
             </div>
           </div>
 
-          <div className="divider-decorated" />
+          <div className="divider-decorated flex-shrink-0" />
 
-          <div>
+          <div className="flex-shrink-0">
             <h3 className="text-sm text-palace-text-muted mb-2">
               最近流水 ({recentTransactions.length} 条记录)
             </h3>
-            <div className="space-y-2 max-h-60 overflow-y-auto palace-scrollbar">
+            <div className="space-y-2 overflow-y-auto palace-scrollbar">
               {recentTransactions.map((tx, index) => (
                 <div key={tx.id} className="flex justify-between items-center text-sm p-2 bg-palace-bg-light/50 rounded">
                   <span className="text-palace-text-muted truncate flex-1">
@@ -194,30 +224,32 @@ export function FinancePanel() {
       )}
 
       {activeTab === 'chart' && (
-        <div className="h-64">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#3D2A1E" />
-              <XAxis 
-                dataKey="date" 
-                tick={{ fill: '#9A9080', fontSize: 10 }}
-                tickLine={{ stroke: '#3D2A1E' }}
-              />
-              <YAxis 
-                tick={{ fill: '#9A9080', fontSize: 10 }}
-                tickLine={{ stroke: '#3D2A1E' }}
-              />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend />
-              <Bar dataKey="income" name="收入" fill="#6E9E6E" />
-              <Bar dataKey="expense" name="支出" fill="#C0392B" />
-            </BarChart>
-          </ResponsiveContainer>
+        <div className="flex-1 overflow-y-auto palace-scrollbar min-h-0 flex-shrink-0">
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#3D2A1E" />
+                <XAxis 
+                  dataKey="date" 
+                  tick={{ fill: '#9A9080', fontSize: 10 }}
+                  tickLine={{ stroke: '#3D2A1E' }}
+                />
+                <YAxis 
+                  tick={{ fill: '#9A9080', fontSize: 10 }}
+                  tickLine={{ stroke: '#3D2A1E' }}
+                />
+                <Tooltip content={<CustomTooltip />} />
+                <Legend />
+                <Bar dataKey="income" name="收入" fill="#6E9E6E" />
+                <Bar dataKey="expense" name="支出" fill="#C0392B" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
       )}
 
       {activeTab === 'ranking' && (
-        <div className="space-y-4">
+        <div className="space-y-4 flex-1 overflow-y-auto palace-scrollbar min-h-0 flex-shrink-0">
           <div>
             <h3 className="text-sm text-palace-text-muted mb-2">税收前五</h3>
             <div className="space-y-1">

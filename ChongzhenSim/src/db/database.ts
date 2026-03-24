@@ -472,3 +472,47 @@ export function insertMinisterLog(log: MinisterLog): void {
 export function generateId(): string {
   return `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 }
+
+// ============================================
+// 統一架構：獲取最新狀態接口
+// ============================================
+
+export interface LatestState {
+  provinces: Province[];
+  treasury: {
+    gold: number;
+    grain: number;
+  };
+  transactions: TreasuryTransaction[];
+}
+
+/**
+ * 獲取數據庫中的最新狀態
+ * 這是統一架構的核心方法，用於從數據庫同步到 Zustand Store
+ */
+export function getLatestState(): LatestState {
+  try {
+    const provinces = getAllProvinces();
+    const gold = getTotalGold();
+    const transactions = getRecentTransactions(50);
+    
+    return {
+      provinces,
+      treasury: {
+        gold,
+        grain: 0 // 目前數據庫沒有糧食表，暫時返回 0
+      },
+      transactions
+    };
+  } catch (error) {
+    console.error('[Database] getLatestState failed:', error);
+    return {
+      provinces: [],
+      treasury: {
+        gold: 0,
+        grain: 0
+      },
+      transactions: []
+    };
+  }
+}

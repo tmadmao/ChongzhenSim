@@ -1082,10 +1082,10 @@
 /* 状态栏项目样式 */
 .status-item {
   position: relative;
-  padding: 0.5rem 1rem;
+  padding: 0.25rem 0.75rem;
   background: oklch(from var(--color-palace-bg-light) l c h / 0.5);
   border: 1px solid var(--color-palace-border);
-  border-radius: 0.5rem;
+  border-radius: 0.375rem;
   transition: all 0.3s ease;
 }
 

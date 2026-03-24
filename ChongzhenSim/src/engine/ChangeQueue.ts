@@ -11,11 +11,15 @@
 
 import type { GameState } from '../core/types';
 import { createLogger } from '../utils/logger';
+import { ChangeType, toTsField } from '../core/fieldKeys';
 
 const logger = createLogger('ChangeQueue');
 
-// 变动类型
-export type ChangeType = 
+// 重新導出 ChangeType 以便向後兼容
+export { ChangeType };
+
+// 舊的 ChangeType 定義（為了向後兼容）
+export type ChangeTypeString =
   | 'treasury'      // 国库变动
   | 'province'      // 省份变动
   | 'faction'       // 派系变动
@@ -28,7 +32,7 @@ export interface ChangeRequest {
   id: string;
   type: ChangeType;
   target: string;       // 目标ID（如省份ID、官员ID等）
-  field: string;        // 字段名
+  field: string;        // 字段名（建議使用 ProvinceField, NationField 等枚舉）
   delta?: number;       // 变动值（用于累积的数值，如国库银两）
   newValue?: number;    // 新值（用于绝对值，如税率）
   description: string;  // 描述
@@ -41,6 +45,7 @@ export class ChangeQueue {
   private queue: ChangeRequest[] = [];
   private static instance: ChangeQueue;
   private isApplying: boolean = false; // 防止重入
+  private appliedTreasuryChanges: Array<{ delta: number; description: string; source: string }> = []; // 记录应用过的国库变动
 
   private constructor() {
     logger.info('[ChangeQueue] Initialized');
@@ -116,6 +121,7 @@ export class ChangeQueue {
     }
     
     this.isApplying = true;
+    this.appliedTreasuryChanges = []; // 清空之前的记录
     logger.info(`[ChangeQueue] Starting applyAll with ${this.queue.length} changes`);
     
     let newState = JSON.parse(JSON.stringify(state)); // 深拷贝
@@ -213,23 +219,37 @@ export class ChangeQueue {
       return;
     }
 
-    if (change.target === 'gold') {
+    // 統一架構：優先使用 field 屬性，向後兼容 target 屬性
+    const field = change.field || change.target;
+
+    if (field === 'gold') {
       const oldValue = state.treasury.gold ?? 0;
-      const newValue = Math.max(0, oldValue + (change.delta || 0));
+      const delta = change.delta || 0;
+      const newValue = Math.max(0, oldValue + delta);
       state.treasury.gold = newValue;
 
-      const logMsg = `国库银两: ${oldValue.toFixed(1)} → ${newValue.toFixed(1)} (${change.delta && change.delta >= 0 ? '+' : ''}${change.delta || 0}) [${change.description}]`;
+      const logMsg = `国库银两: ${oldValue.toFixed(1)} → ${newValue.toFixed(1)} (${delta >= 0 ? '+' : ''}${delta}) [${change.description}]`;
       logs.push(logMsg);
       logger.info(`[ChangeQueue] ${logMsg}`);
 
-    } else if (change.target === 'grain') {
+      // 记录到应用过的国库变动列表
+      this.appliedTreasuryChanges.push({
+        delta,
+        description: change.description || '国库变动',
+        source: change.source || '未知'
+      });
+
+    } else if (field === 'grain') {
       const oldValue = state.treasury.grain ?? 0;
-      const newValue = Math.max(0, oldValue + (change.delta || 0));
+      const delta = change.delta || 0;
+      const newValue = Math.max(0, oldValue + delta);
       state.treasury.grain = newValue;
 
-      const logMsg = `国库粮食: ${oldValue.toFixed(1)} → ${newValue.toFixed(1)} (${change.delta && change.delta >= 0 ? '+' : ''}${change.delta || 0}) [${change.description}]`;
+      const logMsg = `国库粮食: ${oldValue.toFixed(1)} → ${newValue.toFixed(1)} (${delta >= 0 ? '+' : ''}${delta}) [${change.description}]`;
       logs.push(logMsg);
       logger.info(`[ChangeQueue] ${logMsg}`);
+    } else {
+      logger.warn(`[ChangeQueue] Unknown treasury field: ${field}, change:`, change);
     }
   }
 
@@ -247,19 +267,22 @@ export class ChangeQueue {
     }
 
     const province = state.provinces[provinceIndex];
-    const oldValue = (province as any)[change.field];
+    
+    // 統一架構：將可能的數據庫字段名轉換為 TypeScript 字段名
+    const tsField = toTsField(change.field);
+    const oldValue = (province as any)[tsField];
 
     if (change.newValue !== undefined) {
       // 绝对值模式
-      (province as any)[change.field] = change.newValue;
-      const logMsg = `${province.name}.${change.field}: ${oldValue} → ${change.newValue} [${change.description}]`;
+      (province as any)[tsField] = change.newValue;
+      const logMsg = `${province.name}.${tsField}: ${oldValue} → ${change.newValue} [${change.description}]`;
       logs.push(logMsg);
       logger.info(`[ChangeQueue] ${logMsg}`);
     } else if (change.delta !== undefined) {
       // 变动值模式
       const newValue = Math.max(0, (oldValue || 0) + change.delta);
-      (province as any)[change.field] = newValue;
-      const logMsg = `${province.name}.${change.field}: ${oldValue} → ${newValue} (${change.delta >= 0 ? '+' : ''}${change.delta}) [${change.description}]`;
+      (province as any)[tsField] = newValue;
+      const logMsg = `${province.name}.${tsField}: ${oldValue} → ${newValue} (${change.delta >= 0 ? '+' : ''}${change.delta}) [${change.description}]`;
       logs.push(logMsg);
       logger.info(`[ChangeQueue] ${logMsg}`);
     }
@@ -319,6 +342,14 @@ export class ChangeQueue {
     const logMsg = `事件效果: [${change.description}]`;
     logs.push(logMsg);
     logger.info(`[ChangeQueue] ${logMsg}`);
+  }
+
+  /**
+   * 获取本次 applyAll 应用过的国库变动记录
+   * 用于 AccountingSystem 统计
+   */
+  getTreasuryChanges(): Array<{ delta: number; description: string; source: string }> {
+    return [...this.appliedTreasuryChanges];
   }
 }
 
