@@ -1,5 +1,6 @@
 import type { Province, TaxResult, TaxReport, NationStats } from '../core/types';
 import { updateProvince, insertTransaction, generateId } from '../db/database';
+import { GAME_CONFIG } from '../config/gameConfig';
 
 export class TaxSystem {
   private currentTurn: number = 1;
@@ -11,11 +12,11 @@ export class TaxSystem {
   }
 
   calculateProvinceTax(province: Province, nationStats: NationStats): TaxResult {
-    const baseTax = province.population * province.taxRate * 0.1;
+    const baseTax = province.population * province.taxRate * GAME_CONFIG.TAX.BASE_TAX_RATE;
     
-    const corruptionFactor = province.corruptionLevel / 200;
-    const disasterFactor = province.disasterLevel * 0.1;
-    const moraleFactor = Math.max(0.3, nationStats.peopleMorale / 100);
+    const corruptionFactor = province.corruptionLevel / GAME_CONFIG.TAX.CORRUPTION_FACTOR_DENOMINATOR;
+    const disasterFactor = province.disasterLevel * GAME_CONFIG.TAX.DISASTER_FACTOR;
+    const moraleFactor = Math.max(GAME_CONFIG.TAX.MIN_MORALE_FACTOR, nationStats.peopleMorale / 100);
     
     const corruptionLoss = baseTax * corruptionFactor;
     const disasterLoss = baseTax * disasterFactor;
@@ -55,8 +56,8 @@ export class TaxSystem {
         createdAt: Date.now()
       });
       
-      if (province.taxRate > 0.3) {
-        const unrestIncrease = Math.floor((province.taxRate - 0.3) * 20);
+      if (province.taxRate > GAME_CONFIG.TAX.TAX_UNREST.HIGH_TAX_THRESHOLD) {
+        const unrestIncrease = Math.floor((province.taxRate - GAME_CONFIG.TAX.TAX_UNREST.HIGH_TAX_THRESHOLD) * GAME_CONFIG.TAX.TAX_UNREST.UNREST_PER_TAX_ABOVE_THRESHOLD);
         updateProvince(result.provinceId, {
           civilUnrest: Math.min(100, province.civilUnrest + unrestIncrease)
         });
@@ -80,13 +81,13 @@ export class TaxSystem {
     updateProvince(provinceId, { taxRate: newRate });
     
     const rateChange = newRate - oldRate;
-    if (rateChange > 0.1) {
-      const unrestIncrease = Math.floor(rateChange * 30);
+    if (rateChange > GAME_CONFIG.TAX.TAX_UNREST.RATE_CHANGE_THRESHOLD) {
+      const unrestIncrease = Math.floor(rateChange * GAME_CONFIG.TAX.TAX_UNREST.UNREST_PER_RATE_INCREASE);
       updateProvince(provinceId, {
         civilUnrest: Math.min(100, province.civilUnrest + unrestIncrease)
       });
-    } else if (rateChange < -0.1) {
-      const unrestDecrease = Math.floor(Math.abs(rateChange) * 15);
+    } else if (rateChange < -GAME_CONFIG.TAX.TAX_UNREST.RATE_CHANGE_THRESHOLD) {
+      const unrestDecrease = Math.floor(Math.abs(rateChange) * GAME_CONFIG.TAX.TAX_UNREST.UNREST_PER_RATE_DECREASE);
       updateProvince(provinceId, {
         civilUnrest: Math.max(0, province.civilUnrest - unrestDecrease)
       });
@@ -119,9 +120,9 @@ export class TaxSystem {
   }
 
   getTaxBurden(province: Province): 'light' | 'moderate' | 'heavy' | 'extreme' {
-    if (province.taxRate <= 0.2) return 'light';
-    if (province.taxRate <= 0.35) return 'moderate';
-    if (province.taxRate <= 0.5) return 'heavy';
+    if (province.taxRate <= GAME_CONFIG.TAX.TAX_BURDEN.LIGHT_THRESHOLD) return 'light';
+    if (province.taxRate <= GAME_CONFIG.TAX.TAX_BURDEN.MODERATE_THRESHOLD) return 'moderate';
+    if (province.taxRate <= GAME_CONFIG.TAX.TAX_BURDEN.HEAVY_THRESHOLD) return 'heavy';
     return 'extreme';
   }
 

@@ -1,10 +1,11 @@
 import type { Province, Minister, NationStats, ExpenseBreakdown, TreasurySnapshot, ChartData, GameState } from '../core/types';
 import { insertTransaction, generateId, getTreasuryHistory, getTotalGold } from '../db/database';
+import { GAME_CONFIG } from '../config/gameConfig';
 
 export class FinanceSystem {
   private currentTurn: number = 1;
   private currentDate: string = '崇祯元年正月';
-  private initialTreasury: number = 800;
+  private initialTreasury: number = GAME_CONFIG.INITIAL.TREASURY;
 
   setTurnInfo(turn: number, date: string): void {
     this.currentTurn = turn;
@@ -15,17 +16,17 @@ export class FinanceSystem {
     const { provinces, ministers, nationStats } = state;
     
     const totalMilitary = provinces.reduce((sum, p) => sum + p.militaryForce, 0);
-    const military = totalMilitary * 0.5;
+    const military = totalMilitary * GAME_CONFIG.FINANCE.MILITARY_COST_PER_FORCE;
     
     const aliveMinisters = ministers.filter(m => m.isAlive);
-    const salary = aliveMinisters.length * 2;
+    const salary = aliveMinisters.length * GAME_CONFIG.FINANCE.MINISTER_SALARY;
     
     const highDisasterProvinces = provinces.filter(p => p.disasterLevel >= 3);
-    const disaster = highDisasterProvinces.reduce((sum, p) => sum + p.disasterLevel * 3, 0);
+    const disaster = highDisasterProvinces.reduce((sum, p) => sum + p.disasterLevel * GAME_CONFIG.FINANCE.DISASTER_RELIEF_PER_LEVEL, 0);
     
-    const border = nationStats.borderThreat * 0.5;
+    const border = nationStats.borderThreat * GAME_CONFIG.FINANCE.BORDER_THREAT_COST;
     
-    const corruption = Math.floor(nationStats.overallCorruption * 0.3);
+    const corruption = Math.floor(nationStats.overallCorruption * GAME_CONFIG.FINANCE.CORRUPTION_LOSS_RATE);
     
     const total = military + salary + disaster + border + corruption;
     
@@ -79,7 +80,7 @@ export class FinanceSystem {
     return {
       turn: this.currentTurn,
       gold: Math.round(newGold * 100) / 100,
-      grain: 500,
+      grain: GAME_CONFIG.INITIAL.GRAIN,
       income: Math.round(income * 100) / 100,
       expense: expenses.total,
       balance: Math.round(balance * 100) / 100
@@ -91,9 +92,9 @@ export class FinanceSystem {
     
     const balance = income - expense;
     
-    if (gold < 200) return 'deficit';
-    if (balance < 0 && gold < 500) return 'deficit';
-    if (balance > 0 && gold > 1500) return 'surplus';
+    if (gold < GAME_CONFIG.FINANCE.FINANCIAL_HEALTH.DEFICIT_THRESHOLD) return 'deficit';
+    if (balance < 0 && gold < GAME_CONFIG.FINANCE.FINANCIAL_HEALTH.BALANCED_THRESHOLD) return 'deficit';
+    if (balance > 0 && gold > GAME_CONFIG.FINANCE.FINANCIAL_HEALTH.SURPLUS_THRESHOLD) return 'surplus';
     
     return 'balanced';
   }
@@ -125,7 +126,7 @@ export class FinanceSystem {
   calculateTaxEfficiency(provinces: Province[]): number {
     if (provinces.length === 0) return 0;
     
-    const totalPotential = provinces.reduce((sum, p) => sum + p.population * p.taxRate * 0.1, 0);
+    const totalPotential = provinces.reduce((sum, p) => sum + p.population * p.taxRate * GAME_CONFIG.TAX_EFFICIENCY.POTENTIAL_TAX_FACTOR, 0);
     const totalActual = provinces.reduce((sum, p) => sum + p.taxRevenue, 0);
     
     if (totalPotential === 0) return 0;
