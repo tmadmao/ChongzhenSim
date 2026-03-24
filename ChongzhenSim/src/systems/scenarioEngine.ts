@@ -639,6 +639,43 @@ export class ScenarioEngine {
       return state
     }
   }
+
+  // ── 公开：处理基于玩家选择的事件锁定/解锁 ──
+
+  applyChoiceEventLocks(locksEvents: string[] = [], unlocksEvents: string[] = []): void {
+    try {
+      // 锁死指定事件
+      for (const lockId of locksEvents) {
+        const lockEvent = SCRIPTED_EVENTS.find(e => e.id === lockId)
+        if (lockEvent) lockEvent.status = 'locked'
+      }
+
+      // 解锁指定事件
+      for (const unlockId of unlocksEvents) {
+        const unlockEvent = SCRIPTED_EVENTS.find(e => e.id === unlockId)
+        if (unlockEvent && unlockEvent.status === 'locked') {
+          unlockEvent.status = 'pending'
+        }
+      }
+    } catch (error) {
+      console.error('[ScenarioEngine] Error in applyChoiceEventLocks:', error)
+    }
+  }
+
+  // ── 公开：批量应用效果 ──
+
+  applyEffectsPublic(effects: GameEffect[], state: GameState): GameState {
+    try {
+      let newState = { ...state }
+      for (const effect of effects) {
+        newState = this.applyEffect(effect, newState)
+      }
+      return newState
+    } catch (error) {
+      console.error('[ScenarioEngine] Error in applyEffectsPublic:', error)
+      return state
+    }
+  }
 }
 
 export const scenarioEngine = new ScenarioEngine()

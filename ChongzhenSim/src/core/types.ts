@@ -206,7 +206,9 @@ export type GameEventType =
   | 'event:generated'
   | 'choice:selected'
   | 'game:over'
-  | 'error';
+  | 'error'
+  | 'effects:applied';
+
 
 export interface GameEvent {
   type: GameEventType;

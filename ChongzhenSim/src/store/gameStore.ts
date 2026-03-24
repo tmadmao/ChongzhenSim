@@ -34,6 +34,7 @@ interface GameStore {
   setError: (error: string | null) => void;
   adjustProvinceTaxRate: (provinceId: string, rate: number) => void;
   replaceOfficial: (positionTitle: string, newMinisterId: string) => void;
+  applyBatchEffects: (effects: any[]) => void;
 }
 
 const initialNationStats: NationStats = {
@@ -478,6 +479,28 @@ export const useGameStore = create<GameStore>()(
         });
         
         emitGameEvent('minister:updated', { positionTitle, newMinisterId, oldMinisterId: currentOfficial?.id });
+      },
+
+      applyBatchEffects: async (effects) => {
+        const { gameState, turnLog } = get();
+        if (!gameState) return;
+        
+        try {
+          const { scenarioEngine } = await import('@/systems/scenarioEngine');
+          const newState = scenarioEngine.applyEffectsPublic(effects, gameState);
+          
+          set({ 
+            gameState: newState,
+            turnLog: [...turnLog, `批量应用 ${effects.length} 个效果`]
+          });
+          
+          emitGameEvent('effects:applied' as any, { effects });
+        } catch (error) {
+          console.error('[GameStore] applyBatchEffects failed:', error);
+          set({ 
+            error: `效果应用失败: ${error instanceof Error ? error.message : '未知错误'}` 
+          });
+        }
       }
     }),
     {

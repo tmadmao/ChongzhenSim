@@ -9,7 +9,7 @@ interface BottomBarProps {
 }
 
 export function BottomBar({ onOpenMinisterChat, onOpenDecree, onOpenSettings }: BottomBarProps) {
-  const { endTurn, saveGame, isLoading } = useGameStore();
+  const { endTurn, isLoading } = useGameStore();
   const [showConfirm, setShowConfirm] = useState(false);
 
   const handleEndTurn = async () => {

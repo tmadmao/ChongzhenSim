@@ -14,6 +14,10 @@ export function ScenarioEventPanel({ isVisible }: { isVisible: boolean }) {
   useEffect(() => {
     const handleEventTriggered = (data: unknown) => {
       const event = data as ScriptedEvent;
+      if (!event || !event.description) {
+        console.warn('Invalid event data received:', data);
+        return;
+      }
       setActiveEvent(event);
       setDisplayText('');
       setIsTyping(true);

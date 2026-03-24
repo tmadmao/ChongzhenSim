@@ -4,6 +4,7 @@ import { TaxSystem } from '../systems/taxSystem';
 import { FinanceSystem } from '../systems/financeSystem';
 import { updateProvince, insertGameSnapshot, generateId, saveToLocalStorage } from '../db/database';
 import { createLogger } from '../utils/logger';
+import { useCourtStore } from '../store/courtStore';
 
 const logger = createLogger('GameEngine');
 
@@ -146,6 +147,17 @@ export class GameLoop {
       state.turnLog = [];
     }
     state.turnLog = [...state.turnLog, ...logs];
+
+    // 检查并重置朝堂状态
+    try {
+      const courtStore = useCourtStore.getState();
+      if (courtStore) {
+        courtStore.resetCourt();
+        logger.debug('Court state reset');
+      }
+    } catch (error) {
+      logger.error('Failed to reset court state:', error);
+    }
 
     emitGameEvent('turn:end', { turn: state.turn, logs });
 
