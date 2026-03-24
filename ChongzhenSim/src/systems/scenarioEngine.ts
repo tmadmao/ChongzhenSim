@@ -1,8 +1,8 @@
-import type { GameState, GameEffect } from '@/core/types'
-import { SCRIPTED_EVENTS, type ScriptedEvent } from '@/data/scenario/scriptedEvents'
-import { FACTIONS, type Faction } from '@/data/scenario/factions'
+import type { GameState, GameEffect, Province } from '@/core/types'
+import { SCRIPTED_EVENTS } from '@/data/scenario/scriptedEvents'
+import { FACTIONS } from '@/data/scenario/factions'
 import { HISTORICAL_CHARACTERS, CHARACTER_EXIT_RULES } from '@/data/scenario/historicalCharacters'
-import { NATIONAL_POLICIES, type NationalPolicy } from '@/data/scenario/nationalPolicies'
+import { NATIONAL_POLICIES } from '@/data/scenario/nationalPolicies'
 import { eventBus } from '@/core/eventBus'
 
 export class ScenarioEngine {
@@ -591,7 +591,7 @@ export class ScenarioEngine {
           break
 
         case 'province':
-          const provinceIndex = newState.provinces.findIndex(p => p.id === effect.target)
+          const provinceIndex = newState.provinces.findIndex((p: Province) => p.id === effect.target)
           if (provinceIndex !== -1) {
             // @ts-ignore - 动态字段访问
             const currentValue = newState.provinces[provinceIndex][effect.field]

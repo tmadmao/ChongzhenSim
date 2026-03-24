@@ -9,11 +9,7 @@ import {
   insertProvinces, 
   getAllProvinces, 
   updateProvince,
-  insertTransaction,
-  insertGameSnapshot,
   saveToLocalStorage,
-  generateId,
-  getTotalGold,
   clearDatabase
 } from '../db/database';
 import { useProvinceStore } from './provinceStore';
@@ -79,7 +75,8 @@ export const useGameStore = create<GameStore>()(
             phase: 'morning',
             treasury: {
               gold: initialTreasury.gold,
-              grain: initialTreasury.grain
+              grain: initialTreasury.grain,
+              transactions: []
             },
             provinces,
             ministers,
@@ -269,8 +266,8 @@ export const useGameStore = create<GameStore>()(
                 if (province) {
                   const key = effect.field as keyof Province;
                   if (typeof province[key] === 'number') {
-                    (province as Record<string, number>)[key] += effect.delta;
-                    updateProvince(effect.target, { [key]: (province as Record<string, number>)[key] });
+                    (province as unknown as Record<string, number>)[key] += effect.delta;
+                    updateProvince(effect.target, { [key]: (province as unknown as Record<string, number>)[key] });
                   }
                 }
                 break;
@@ -280,7 +277,7 @@ export const useGameStore = create<GameStore>()(
                 if (minister) {
                   const key = effect.field as keyof Minister;
                   if (typeof minister[key] === 'number') {
-                    (minister as Record<string, number>)[key] += effect.delta;
+                    (minister as unknown as Record<string, number>)[key] += effect.delta;
                   }
                 }
                 break;
@@ -349,7 +346,7 @@ export const useGameStore = create<GameStore>()(
               turn: 1,
               date: '崇祯元年正月',
               phase: 'morning',
-              treasury: { gold: 800, grain: 500 },
+              treasury: { gold: 800, grain: 500, transactions: [] },
               provinces,
               ministers: [],
               nationStats: initialNationStats,

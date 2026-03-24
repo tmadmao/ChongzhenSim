@@ -1,6 +1,42 @@
 # 更新日志 Changelog
 
 > **声明：本游戏当前版本处于框架构建阶段，尚不可游玩。**
+## [v0.1.4] - 2026-03-24
+
+### 性能优化
+
+#### 代码分割优化
+- 使用 React.lazy 和 Suspense 实现组件懒加载
+- 主要面板组件（FinancePanel、DecreePanel、EventPanel 等）改为按需加载
+- 添加 Loading 占位符，提升用户体验
+- 减少初始页面加载时间
+
+#### 构建配置优化
+- 配置 Vite manualChunks，将 React 相关库分离为独立 chunk
+- 调整 chunkSizeWarningLimit 为 1000 KB，减少构建警告
+- 确保 WASM 文件路径处理正确
+
+### 代码质量
+
+#### 硬编码数值抽离
+- 创建 `src/config/gameConfig.ts` 配置文件
+- 将所有影响数值平衡的常量抽离到配置对象中
+- 修改 FinanceSystem 和 TaxSystem 使用配置参数
+- 提高代码可维护性和可扩展性
+
+#### 全局日志系统
+- 创建 `src/utils/logger.ts` 日志工具
+- 实现分级日志（info、warn、error、debug）
+- 在 LLM 客户端和游戏引擎中集成日志
+- 支持生产环境自动关闭 Debug 日志
+
+### 修复
+
+#### TypeScript 编译错误
+- 修复所有 51 个 TypeScript 编译错误
+- 解决类型转换、未使用变量、模块导入等问题
+- 项目构建成功完成
+
 ## [v0.1.3] - 2026-03-24
 
 ### 重大更新

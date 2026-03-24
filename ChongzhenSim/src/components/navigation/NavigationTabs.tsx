@@ -1,5 +1,5 @@
 import { useNavigationStore, type NavigationView } from '@/store/navigationStore';
-import { useThemeStore } from '@/store/themeStore';
+
 
 interface NavItem {
   key: NavigationView;
@@ -17,7 +17,7 @@ const navItems: NavItem[] = [
 
 export function NavigationTabs() {
   const { currentView, setView } = useNavigationStore();
-  const { theme } = useThemeStore();
+
 
   return (
     <div className="navigation-tabs">

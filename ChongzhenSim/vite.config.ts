@@ -36,5 +36,14 @@ export default defineConfig({
   assetsInclude: ['**/*.wasm'],
   build: {
     target: 'esnext',
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom', 'react-is'],
+          'sql-wasm': ['sql.js'],
+        },
+      },
+    },
   },
 })

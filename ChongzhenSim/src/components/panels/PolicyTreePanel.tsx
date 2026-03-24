@@ -114,7 +114,7 @@ interface PolicyCardProps {
 }
 
 const PolicyCard: React.FC<PolicyCardProps> = ({
-  policy, gameState, canResearch, onStartResearch, onCancelResearch, onJumpToPrereq
+  policy, canResearch, onStartResearch, onCancelResearch, onJumpToPrereq
 }) => {
   const { policies } = usePolicyStore();
 

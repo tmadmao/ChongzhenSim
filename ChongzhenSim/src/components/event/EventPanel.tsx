@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useGameStore } from '../../store/gameStore';
-import type { AIEventResponse, Choice } from '../../api';
+import type { Choice } from '../../api';
 
 export function EventPanel() {
   const { gameState, applyPlayerDecision } = useGameStore();
@@ -26,6 +26,7 @@ export function EventPanel() {
     
     setTimeout(() => {
       applyPlayerDecision({
+        type: 'event_choice',
         choiceId: choice.id,
         effects: choice.effects
       });

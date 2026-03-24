@@ -1,18 +1,28 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, lazy, Suspense } from 'react';
 import { useGameStore } from './store/gameStore';
 import { useProvinceStore } from './store/provinceStore';
 import { useFinanceStore } from './store/financeStore';
 import { useThemeStore, initTheme } from './store/themeStore';
 import { Layout, BottomBar, StatusBar } from './components/layout';
-import { ProvincePanel } from './components/province';
-import { FinancePanel } from './components/finance';
-import { LogPanel } from './components/log';
-import { EventPanel, ScenarioEventPanel } from './components/event';
-import { GameMap } from './components/map';
-import ProvinceInfoPanel from './components/map/ProvinceInfoPanel';
-import { MinisterChatPanel } from './components/minister';
-import { DecreePanel } from './components/decree';
-import { PolicyTreePanel } from './components/panels';
+
+// 懒加载组件
+const ProvincePanel = lazy(() => import('./components/province').then(module => ({ default: module.ProvincePanel })));
+const FinancePanel = lazy(() => import('./components/finance').then(module => ({ default: module.FinancePanel })));
+const LogPanel = lazy(() => import('./components/log').then(module => ({ default: module.LogPanel })));
+const ScenarioEventPanel = lazy(() => import('./components/event').then(module => ({ default: module.ScenarioEventPanel })));
+const GameMap = lazy(() => import('./components/map').then(module => ({ default: module.GameMap })));
+const ProvinceInfoPanel = lazy(() => import('./components/map/ProvinceInfoPanel'));
+const MinisterChatPanel = lazy(() => import('./components/minister').then(module => ({ default: module.MinisterChatPanel })));
+const DecreePanel = lazy(() => import('./components/decree').then(module => ({ default: module.DecreePanel })));
+
+// Loading 组件
+const Loading = () => (
+  <div className="flex items-center justify-center h-full text-palace-text-muted">
+    <div className="animate-spin w-8 h-8 border-2 border-palace-gold border-t-transparent rounded-full mr-2"></div>
+    <span>加载中...</span>
+  </div>
+);
+
 import { initDatabase } from './db/database';
 import provincesData from './data/provinces.json';
 import charactersData from './data/characters.json';
@@ -24,7 +34,7 @@ function App() {
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   const [showMinisterChat, setShowMinisterChat] = useState(false);
   const [showDecree, setShowDecree] = useState(false);
-  const [showScenarioEvent, setShowScenarioEvent] = useState(true);
+  const [showScenarioEvent] = useState(true);
   const [dbReady, setDbReady] = useState(false);
   const [needsNewGame, setNeedsNewGame] = useState(false);
   
@@ -34,8 +44,7 @@ function App() {
     loadingMessage, 
     error, 
     initGame, 
-    endTurn,
-    resetGame
+
   } = useGameStore();
   
   const { loadProvinces } = useProvinceStore();
@@ -108,17 +117,7 @@ function App() {
     setIsDataLoaded(false);
   };
 
-  const handleEndTurn = async () => {
-    await endTurn();
-    loadProvinces();
-    loadFinanceData();
-  };
 
-  const handleNewGame = () => {
-    resetGame();
-    setIsDataLoaded(false);
-    setNeedsNewGame(true);
-  };
 
   if (error) {
     return (
@@ -180,14 +179,22 @@ function App() {
     <>
       <Layout
         statusBar={<StatusBar />}
-        leftPanel={<ProvincePanel />}
+        leftPanel={
+          <Suspense fallback={<Loading />}>
+            <ProvincePanel />
+          </Suspense>
+        }
         rightPanel={
           <div className="h-full flex flex-col">
             <div className="flex-1 overflow-hidden">
-              <FinancePanel />
+              <Suspense fallback={<Loading />}>
+                <FinancePanel />
+              </Suspense>
             </div>
             <div className="flex-1 overflow-hidden border-t border-palace-border">
-              <LogPanel />
+              <Suspense fallback={<Loading />}>
+                <LogPanel />
+              </Suspense>
             </div>
           </div>
         }
@@ -203,22 +210,32 @@ function App() {
           height: 'calc(100vh - 144px)', 
           overflow: 'hidden', 
         }}>
-          <ProvinceInfoPanel />
+          <Suspense fallback={<Loading />}>
+            <ProvinceInfoPanel />
+          </Suspense>
           <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-            <GameMap />
+            <Suspense fallback={<Loading />}>
+              <GameMap />
+            </Suspense>
           </div>
         </div>
       </Layout>
 
       {showMinisterChat && (
-        <MinisterChatPanel onClose={() => setShowMinisterChat(false)} />
+        <Suspense fallback={<Loading />}>
+          <MinisterChatPanel onClose={() => setShowMinisterChat(false)} />
+        </Suspense>
       )}
 
       {showDecree && (
-        <DecreePanel onClose={() => setShowDecree(false)} />
+        <Suspense fallback={<Loading />}>
+          <DecreePanel onClose={() => setShowDecree(false)} />
+        </Suspense>
       )}
 
-      <ScenarioEventPanel isVisible={showScenarioEvent} />
+      <Suspense fallback={<Loading />}>
+        <ScenarioEventPanel isVisible={showScenarioEvent} />
+      </Suspense>
 
 
     </>

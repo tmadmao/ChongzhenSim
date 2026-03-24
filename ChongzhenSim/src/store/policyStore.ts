@@ -41,7 +41,7 @@ export const usePolicyStore = create<PolicyStore>()(
       },
 
       startResearch: (policyId, gameState) => {
-        const { policies, canStartResearch } = get()
+        const { canStartResearch } = get()
         const check = canStartResearch(policyId, gameState)
         if (!check.canResearch) return false
 

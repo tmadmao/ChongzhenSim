@@ -114,7 +114,7 @@ export class TaxSystem {
     return taxResults.reduce((sum, r) => sum + r.actualTax, 0);
   }
 
-  getTaxEfficiency(province: Province, taxResult: TaxResult): number {
+  getTaxEfficiency(_province: Province, taxResult: TaxResult): number {
     if (taxResult.baseTax === 0) return 0;
     return Math.round((taxResult.actualTax / taxResult.baseTax) * 100);
   }

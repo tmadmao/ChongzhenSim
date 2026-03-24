@@ -67,11 +67,11 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
     const health = get().calculateFinancialHealth(
       gold,
       treasury.transactions
-        .filter(t => t.type === 'income')
-        .reduce((sum, t) => sum + t.amount, 0),
+        .filter((t: TreasuryTransaction) => t.type === 'income')
+        .reduce((sum: number, t: TreasuryTransaction) => sum + t.amount, 0),
       treasury.transactions
-        .filter(t => t.type === 'expense')
-        .reduce((sum, t) => sum + t.amount, 0)
+        .filter((t: TreasuryTransaction) => t.type === 'expense')
+        .reduce((sum: number, t: TreasuryTransaction) => sum + t.amount, 0)
     );
     
     set({

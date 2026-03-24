@@ -7,6 +7,9 @@ import {
   SYSTEM_PROMPT
 } from './eventContext';
 import type { Minister } from '../core/types';
+import { createLogger } from '../utils/logger';
+
+const logger = createLogger('LLM');
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3001';
 
@@ -56,6 +59,7 @@ export class LLMClient {
 
   async generateEvent(context: EventContext): Promise<AIEventResponse> {
     try {
+      logger.info('Requesting LLM for event generation...');
       const { object } = await generateObject({
         model: this.provider(this.modelName),
         schema: AIEventResponseSchema,
@@ -64,10 +68,10 @@ export class LLMClient {
         maxRetries: 2,
       });
       
-      console.log('[LLMClient] 生成事件成功:', object.mood);
+      logger.info('LLM event generation successful', { mood: object.mood });
       return object;
     } catch (error) {
-      console.error('[LLMClient] generateEvent 失败，使用 fallback 事件', error);
+      logger.error('LLM event generation failed, using fallback event', error);
       return FALLBACK_EVENT;
     }
   }
@@ -77,10 +81,14 @@ export class LLMClient {
     playerMessage: string,
     _gameContextSummary: string
   ): Promise<ReadableStream<string>> {
+    logger.info('Requesting LLM for minister chat...', { minister: minister.name });
+    
     if (this.useServerProxy) {
+      logger.debug('Using server proxy for minister chat');
       return this.streamMinisterChatViaProxy(minister, playerMessage);
     }
     
+    logger.debug('Using direct LLM for minister chat');
     const { buildMinisterSystemPrompt } = await import('./eventContext');
     const { streamText } = await import('ai');
     
@@ -97,22 +105,23 @@ export class LLMClient {
     );
 
     try {
-      const result = streamText({
+      const result = await streamText({
         model: this.provider(this.modelName),
         system: systemPrompt,
         prompt: playerMessage,
       });
       
+      logger.info('LLM minister chat response received');
       return result.textStream as unknown as ReadableStream<string>;
     } catch (error) {
-      console.error('[LLMClient] streamMinisterChat 失败', error);
+      logger.error('LLM minister chat failed', error);
       const encoder = new TextEncoder();
-      return new ReadableStream({
+      return new ReadableStream<Uint8Array>({
         start(controller) {
           controller.enqueue(encoder.encode('臣惶恐，一时语塞，容臣稍后再奏。'));
           controller.close();
         }
-      });
+      }) as unknown as ReadableStream<string>;
     }
   }
 
@@ -120,28 +129,43 @@ export class LLMClient {
     minister: Minister,
     playerMessage: string
   ): Promise<ReadableStream<string>> {
-    const response = await fetch(`${API_BASE}/api/minister-chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ministerId: minister.id,
-        ministerName: minister.name,
-        ministerInfo: `${minister.title}，${minister.factionLabel}，忠诚${minister.loyalty}，能力${minister.competence}，腐败${minister.corruption}`,
-        userMessage: playerMessage,
-      }),
-    });
+    logger.debug('Sending minister chat request to server proxy');
+    
+    try {
+      const response = await fetch(`${API_BASE}/api/minister-chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ministerId: minister.id,
+          ministerName: minister.name,
+          ministerInfo: `${minister.title}，${minister.factionLabel}，忠诚${minister.loyalty}，能力${minister.competence}，腐败${minister.corruption}`,
+          userMessage: playerMessage,
+        }),
+      });
 
-    if (!response.ok) {
+      if (!response.ok) {
+        logger.error('Server proxy response error', { status: response.status });
+        const encoder = new TextEncoder();
+        return new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(encoder.encode('臣惶恐，无法回应陛下。'));
+            controller.close();
+          }
+        }) as unknown as ReadableStream<string>;
+      }
+
+      logger.info('Server proxy response received');
+      return response.body as unknown as ReadableStream<string>;
+    } catch (error) {
+      logger.error('Server proxy request failed', error);
       const encoder = new TextEncoder();
-      return new ReadableStream({
+      return new ReadableStream<Uint8Array>({
         start(controller) {
           controller.enqueue(encoder.encode('臣惶恐，无法回应陛下。'));
           controller.close();
         }
-      });
+      }) as unknown as ReadableStream<string>;
     }
-
-    return response.body as ReadableStream<string>;
   }
 
   async generateMinisterResponse(
@@ -149,6 +173,8 @@ export class LLMClient {
     playerMessage: string,
     gameContextSummary: string
   ): Promise<string> {
+    logger.debug('Generating minister response...', { minister: minister.name });
+    
     const stream = await this.streamMinisterChat(minister, playerMessage, gameContextSummary);
     const reader = stream.getReader();
     const decoder = new TextDecoder();
@@ -157,9 +183,10 @@ export class LLMClient {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      result += decoder.decode(value, { stream: true });
+      result += decoder.decode(value as unknown as ArrayBuffer, { stream: true });
     }
     
+    logger.info('Minister response generated successfully');
     return result;
   }
 

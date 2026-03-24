@@ -119,6 +119,7 @@ export function DecreePanel({ onClose }: DecreePanelProps) {
     ];
 
     applyPlayerDecision({
+      type: 'decree',
       choiceId: decree.id,
       effects: gameEffects
     });

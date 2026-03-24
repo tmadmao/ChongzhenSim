@@ -23,6 +23,7 @@ export interface Province {
 export interface Treasury {
   gold: number;
   grain: number;
+  transactions: TreasuryTransaction[];
 }
 
 export interface TreasuryTransaction {

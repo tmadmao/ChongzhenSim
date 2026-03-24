@@ -50,30 +50,11 @@ const POSITION_HIERARCHY: PositionConfig[] = [
 ];
 
 // 获取官职配置
-function getPositionConfig(title: string): PositionConfig | undefined {
-  return POSITION_HIERARCHY.find(p => title.includes(p.title.replace('尚书', '').replace('总督', '').replace('总兵', '')));
-}
 
-// 获取官职层级
-function getPositionLevel(title: string): number {
-  const config = getPositionConfig(title);
-  return config?.level || 99;
-}
 
 // ========================================
 // 派系颜色和样式
 // ========================================
-
-function getFactionColor(faction: string): string {
-  switch (faction) {
-    case 'donglin': return 'text-success';
-    case 'eunuch': return 'text-danger';
-    case 'neutral': return 'text-palace-text-muted';
-    case 'military': return 'text-warning';
-    case 'imperial': return 'text-palace-gold';
-    default: return 'text-palace-text-muted';
-  }
-}
 
 function getFactionBadgeClass(faction: string): string {
   switch (faction) {

@@ -2,8 +2,6 @@ import { useState, useMemo } from 'react';
 import { useFinanceStore } from '../../store/financeStore';
 import { useGameStore } from '../../store/gameStore';
 import {
-  LineChart,
-  Line,
   XAxis,
   YAxis,
   CartesianGrid,

@@ -1,4 +1,4 @@
-import type { Province, Minister, NationStats, ExpenseBreakdown, TreasurySnapshot, ChartData, GameState } from '../core/types';
+import type { Province, ExpenseBreakdown, TreasurySnapshot, ChartData, GameState } from '../core/types';
 import { insertTransaction, generateId, getTreasuryHistory, getTotalGold } from '../db/database';
 import { GAME_CONFIG } from '../config/gameConfig';
 

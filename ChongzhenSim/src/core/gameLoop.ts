@@ -1,8 +1,11 @@
-import type { GameState, Province, NationStats, TreasurySnapshot, TaxResult, ExpenseBreakdown, GameEffect, Minister } from './types';
+import type { GameState, Province, NationStats, GameEffect, Minister } from './types';
 import { emitGameEvent } from './eventBus';
 import { TaxSystem } from '../systems/taxSystem';
 import { FinanceSystem } from '../systems/financeSystem';
-import { updateProvince, getAllProvinces, insertGameSnapshot, generateId, saveToLocalStorage } from '../db/database';
+import { updateProvince, insertGameSnapshot, generateId, saveToLocalStorage } from '../db/database';
+import { createLogger } from '../utils/logger';
+
+const logger = createLogger('GameEngine');
 
 export class GameLoop {
   private taxSystem: TaxSystem;
@@ -14,6 +17,7 @@ export class GameLoop {
   }
 
   async tick(currentState: GameState): Promise<GameState> {
+    logger.info('Game tick started', { turn: currentState.turn, date: currentState.date });
     let state = { ...currentState };
     const logs: string[] = [];
 
@@ -22,46 +26,57 @@ export class GameLoop {
 
     // Phase 1 - 税收计算
     try {
+      logger.debug('Starting tax phase');
       state = await this.phase1_Tax(state, logs);
+      logger.debug('Tax phase completed');
     } catch (error) {
-      console.error('[GameLoop] Phase 1 - Tax failed:', error);
+      logger.error('Phase 1 - Tax failed:', error);
       emitGameEvent('error', { phase: 'tax', error });
     }
 
     // Phase 2 - 支出计算
     try {
+      logger.debug('Starting expense phase');
       state = await this.phase2_Expense(state, logs);
+      logger.debug('Expense phase completed');
     } catch (error) {
-      console.error('[GameLoop] Phase 2 - Expense failed:', error);
+      logger.error('Phase 2 - Expense failed:', error);
       emitGameEvent('error', { phase: 'expense', error });
     }
 
     // Phase 3 - 省份状态更新
     try {
+      logger.debug('Starting province update phase');
       state = await this.phase3_ProvinceUpdate(state, logs);
+      logger.debug('Province update phase completed');
     } catch (error) {
-      console.error('[GameLoop] Phase 3 - Province Update failed:', error);
+      logger.error('Phase 3 - Province Update failed:', error);
       emitGameEvent('error', { phase: 'province', error });
     }
 
     // Phase 4 - 国家状态更新
     try {
+      logger.debug('Starting nation stats update phase');
       state = await this.phase4_NationStatsUpdate(state, logs);
+      logger.debug('Nation stats update phase completed');
     } catch (error) {
-      console.error('[GameLoop] Phase 4 - Nation Stats Update failed:', error);
+      logger.error('Phase 4 - Nation Stats Update failed:', error);
       emitGameEvent('error', { phase: 'nation', error });
     }
 
     // Phase 5 - 大臣状态更新
     try {
+      logger.debug('Starting minister update phase');
       state = await this.phase5_MinisterUpdate(state, logs);
+      logger.debug('Minister update phase completed');
     } catch (error) {
-      console.error('[GameLoop] Phase 5 - Minister Update failed:', error);
+      logger.error('Phase 5 - Minister Update failed:', error);
       emitGameEvent('error', { phase: 'minister', error });
     }
 
     // Phase 6 - 国策研究推进
     try {
+      logger.debug('Starting policy research phase');
       // 动态导入并忽略类型检查，避免路径大小写问题
       const policyStoreModule = await import('@/store/policyStore') as any;
       const policyStore = policyStoreModule.usePolicyStore.getState();
@@ -78,42 +93,51 @@ export class GameLoop {
         // 向回合日志添加记录
         logs.push(`【国策】${policy.name} 研究完成，效果已生效`);
       }
+      logger.debug('Policy research phase completed');
     } catch (err) {
-      console.error('[GameLoop] 国策推进失败', err);
+      logger.error('Policy research failed', err);
       emitGameEvent('error', { phase: 'policy', error: err });
     }
 
     // Phase 7 - 剧本引擎
     try {
+      logger.debug('Starting scenario engine phase');
       const { scenarioEngine } = await import('@/systems/scenarioEngine');
       state = scenarioEngine.tick(state);
       emitGameEvent('scenario:updated', { turn: state.turn });
+      logger.debug('Scenario engine phase completed');
     } catch (err) {
-      console.error('[GameLoop] 剧本引擎 tick 失败', err);
+      logger.error('Scenario engine tick failed', err);
       emitGameEvent('error', { phase: 'scenario', error: err });
     }
 
     // Phase 8 - 日期推进
     try {
+      logger.debug('Starting date advance phase');
       state = await this.phase6_DateAdvance(state, logs);
+      logger.debug('Date advance phase completed');
     } catch (error) {
-      console.error('[GameLoop] Phase 8 - Date Advance failed:', error);
+      logger.error('Phase 8 - Date Advance failed:', error);
       emitGameEvent('error', { phase: 'date', error });
     }
 
     // Phase 9 - 保存快照
     try {
+      logger.debug('Starting save snapshot phase');
       await this.phase7_SaveSnapshot(state, logs);
+      logger.debug('Save snapshot phase completed');
     } catch (error) {
-      console.error('[GameLoop] Phase 9 - Save Snapshot failed:', error);
+      logger.error('Phase 9 - Save Snapshot failed:', error);
       emitGameEvent('error', { phase: 'snapshot', error });
     }
 
     // Phase 10 - 游戏结束检查
     try {
+      logger.debug('Starting game over check phase');
       state = await this.phase8_GameOverCheck(state, logs);
+      logger.debug('Game over check phase completed');
     } catch (error) {
-      console.error('[GameLoop] Phase 10 - Game Over Check failed:', error);
+      logger.error('Phase 10 - Game Over Check failed:', error);
       emitGameEvent('error', { phase: 'gameover', error });
     }
 
@@ -125,6 +149,7 @@ export class GameLoop {
 
     emitGameEvent('turn:end', { turn: state.turn, logs });
 
+    logger.info('Game tick completed', { turn: state.turn, date: state.date });
     return state;
   }
 
@@ -226,7 +251,7 @@ export class GameLoop {
   }
 
   private async phase4_NationStatsUpdate(state: GameState, logs: string[]): Promise<GameState> {
-    const { provinces, ministers, nationStats } = state;
+    const { provinces, nationStats } = state;
     
     const totalMilitary = provinces.reduce((sum, p) => sum + p.militaryForce, 0);
     const militaryPower = Math.min(100, Math.round(totalMilitary / 10));
