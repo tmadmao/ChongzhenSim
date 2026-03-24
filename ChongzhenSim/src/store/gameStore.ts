@@ -4,6 +4,7 @@ import type { GameState, Province, Minister, NationStats, AIEventResponse, Playe
 import { emitGameEvent } from '../core/eventBus';
 import { gameLoop } from '../core/gameLoop';
 import { llmClient, buildEventContext } from '../api';
+import type { FinancialLedger } from '../api/schemas';
 import { 
   initDatabase, 
   insertProvinces, 
@@ -15,6 +16,14 @@ import {
 import { useProvinceStore } from './provinceStore';
 import { useFinanceStore } from './financeStore';
 
+interface PendingDecision {
+  type: string;
+  eventId?: string;
+  choiceId?: string;
+  policyId?: string;
+  effects?: any[];
+}
+
 interface GameStore {
   gameState: GameState | null;
   isLoading: boolean;
@@ -22,6 +31,8 @@ interface GameStore {
   currentPhase: GamePhase;
   turnLog: string[];
   error: string | null;
+  currentLedger: FinancialLedger | null;
+  pendingDecisions: PendingDecision[];
   
   initGame: (provinces: Province[], ministers: Minister[], initialTreasury: { gold: number; grain: number }) => Promise<void>;
   endTurn: () => Promise<void>;
@@ -35,6 +46,8 @@ interface GameStore {
   adjustProvinceTaxRate: (provinceId: string, rate: number) => void;
   replaceOfficial: (positionTitle: string, newMinisterId: string) => void;
   applyBatchEffects: (effects: any[]) => void;
+  setCurrentLedger: (ledger: FinancialLedger) => void;
+  clearPendingDecisions: () => void;
 }
 
 const initialNationStats: NationStats = {
@@ -54,6 +67,8 @@ export const useGameStore = create<GameStore>()(
       currentPhase: 'morning',
       turnLog: [],
       error: null,
+      currentLedger: null,
+      pendingDecisions: [],
 
       initGame: async (provinces, ministers, initialTreasury) => {
         set({ isLoading: true, loadingMessage: '初始化数据库...' });
@@ -72,7 +87,7 @@ export const useGameStore = create<GameStore>()(
           
           const gameState: GameState = {
             turn: 1,
-            date: '崇祯元年正月',
+            date: '崇祯1年1月',
             phase: 'morning',
             treasury: {
               gold: initialTreasury.gold,
@@ -126,17 +141,13 @@ export const useGameStore = create<GameStore>()(
             date: result.date,
             phase: result.phase,
             treasury: result.treasury,
+            provinces: result.provinces,
             nationStats: result.nationStats,
             lastIncome: result.lastIncome,
             lastExpense: result.lastExpense,
             isGameOver: result.isGameOver,
             gameOverReason: result.gameOverReason
           };
-
-          const updatedProvinces = getAllProvinces();
-          if (updatedProvinces.length > 0) {
-            newState.provinces = updatedProvinces;
-          }
 
           set({ loadingMessage: '生成朝廷事件...' });
           
@@ -175,6 +186,16 @@ export const useGameStore = create<GameStore>()(
             turnLog: [...turnLog, ...newLogs]
           });
           
+          // 更新 financeStore 中的国库数据
+          try {
+            const financeStore = useFinanceStore.getState();
+            if (financeStore && financeStore.updateTreasury) {
+              financeStore.updateTreasury(newState.treasury.gold, newState.treasury.grain);
+            }
+          } catch (error) {
+            console.error('[GameStore] Failed to update financeStore:', error);
+          }
+          
           emitGameEvent('turn:end', { turn: result.turn });
           
         } catch (error) {
@@ -189,116 +210,196 @@ export const useGameStore = create<GameStore>()(
       applyPlayerDecision: async (decision) => {
         const { gameState, turnLog } = get();
         if (!gameState) return;
-        
-        let newState = { ...gameState };
-        
-        if (decision.type === 'event_choice') {
-          const { scenarioEngine } = await import('@/systems/scenarioEngine');
-          newState = scenarioEngine.applyChoice(
-            decision.eventId!,
-            decision.choiceId!,
-            gameState
-          );
-          set({ gameState: newState });
-        } else if (decision.type === 'research_policy') {
-          // 处理国策研究决策
-          if (decision.policyId) {
-            // 扣除研究费用
-            const policyStoreModule = await import('@/store/policyStore') as any;
-            const policy = policyStoreModule.usePolicyStore.getState().getPolicyById(decision.policyId);
-            if (policy) {
-              newState.treasury.gold -= policy.cost;
-              set({ gameState: newState });
-            }
-          }
-        } else if (decision.type === 'start_policy_research') {
-          const policyStoreModule = await import('@/store/policyStore') as any;
-          const policyStore = policyStoreModule.usePolicyStore.getState();
-          const currentState = get().gameState;
-          if (!currentState) return;
 
-          const result = policyStore.canStartResearch(decision.policyId!, currentState);
-          if (!result.canResearch) {
-            set({ error: result.reason });
-            return;
-          }
+        logger.info(`[GameStore] Applying player decision: ${decision.type}`, decision);
+        console.log(`[GameStore] applyPlayerDecision called:`, {
+          type: decision.type,
+          eventId: decision.eventId,
+          choiceId: decision.choiceId,
+          effectsCount: decision.effects?.length
+        });
 
-          // 扣除研究费用
-          const policy = policyStore.getPolicyById(decision.policyId!)!;
-          if (policy.cost > 0) {
-            set(state => ({
-              gameState: state.gameState ? {
-                ...state.gameState,
-                treasury: {
-                  ...state.gameState.treasury,
-                  gold: state.gameState.treasury.gold - policy.cost,
+        // 导入ChangeQueue和AccountingSystem
+        const { changeQueue } = await import('@/engine/ChangeQueue');
+        const { accountingSystem } = await import('@/engine/AccountingSystem');
+        const { resolveEffectValue } = await import('@/config/gameConfig');
+
+        // 处理不同类型的决策
+        switch (decision.type) {
+          case 'event_choice': {
+            // 处理事件选择
+            if (decision.effects && decision.effects.length > 0) {
+              console.log(`[GameStore] Queueing ${decision.effects.length} event effects`);
+
+              for (const effect of decision.effects) {
+                // 支持新旧两种格式
+                // 新格式: OptionEffect (有 value/configKey 和 mode)
+                // 旧格式: GameEffect (有 delta)
+                let resolvedValue: number;
+                let mode: 'delta' | 'absolute';
+
+                if ('value' in effect || 'configKey' in effect) {
+                  // 新格式 OptionEffect
+                  resolvedValue = resolveEffectValue(
+                    effect.configKey as any,
+                    effect.value
+                  );
+                  mode = effect.mode || 'delta';
+                } else {
+                  // 旧格式 GameEffect
+                  resolvedValue = effect.delta || 0;
+                  mode = 'delta';
                 }
-              } : null
-            }));
-          }
 
-          policyStore.startResearch(decision.policyId!, get().gameState!);
-          const { addTurnLog } = get();
-          addTurnLog(`开始研究国策：${policy.name}（预计${policy.researchTurns}回合完成）`);
-        } else if (decision.type === 'cancel_policy_research') {
-          const policyStoreModule = await import('@/store/policyStore') as any;
-          const policyStore = policyStoreModule.usePolicyStore.getState();
-          if (decision.policyId) {
-            policyStore.cancelResearch(decision.policyId);
-            const policy = policyStore.getPolicyById(decision.policyId);
-            if (policy) {
-              const { addTurnLog } = get();
-              addTurnLog(`取消研究国策：${policy.name}`);
-            }
-          }
-        } else {
-          decision.effects.forEach(effect => {
-            switch (effect.type) {
-              case 'treasury':
-                if (effect.field === 'gold') {
-                  newState.treasury.gold += effect.delta;
-                } else if (effect.field === 'grain') {
-                  newState.treasury.grain += effect.delta;
+                // 根据 mode 确定 delta 或 newValue
+                let delta: number | undefined;
+                let newValue: number | undefined;
+
+                if (mode === 'delta') {
+                  delta = resolvedValue;
+                } else {
+                  newValue = resolvedValue;
                 }
-                break;
-                
-              case 'province':
-                const province = newState.provinces.find(p => p.id === effect.target);
-                if (province) {
-                  const key = effect.field as keyof Province;
-                  if (typeof province[key] === 'number') {
-                    (province as unknown as Record<string, number>)[key] += effect.delta;
-                    updateProvince(effect.target, { [key]: (province as unknown as Record<string, number>)[key] });
+
+                // 所有效果都添加到ChangeQueue
+                changeQueue.enqueue({
+                  type: effect.type as any,
+                  target: effect.target,
+                  field: effect.field,
+                  delta,
+                  newValue,
+                  description: effect.description || '事件效果',
+                  source: decision.choiceId || 'unknown'
+                });
+
+                console.log(`[ChangeQueue] 已加入队列: ${effect.type}.${effect.field} ${mode === 'delta' ? (delta && delta >= 0 ? '+' : '') : '='}${resolvedValue}`);
+
+                // 财务效果同时记录到AccountingSystem
+                if (effect.type === 'treasury' && effect.field === 'gold' && delta !== undefined) {
+                  if (delta > 0) {
+                    accountingSystem.addIncome(
+                      effect.description || '事件收入',
+                      delta,
+                      decision.choiceId || 'unknown'
+                    );
+                  } else if (delta < 0) {
+                    accountingSystem.addExpense(
+                      effect.description || '事件支出',
+                      Math.abs(delta),
+                      decision.choiceId || 'unknown'
+                    );
                   }
                 }
-                break;
-                
-              case 'minister':
-                const minister = newState.ministers.find(m => m.id === effect.target);
-                if (minister) {
-                  const key = effect.field as keyof Minister;
-                  if (typeof minister[key] === 'number') {
-                    (minister as unknown as Record<string, number>)[key] += effect.delta;
-                  }
-                }
-                break;
-                
-              case 'nation':
-                const statsKey = effect.field as keyof NationStats;
-                if (statsKey in newState.nationStats) {
-                  newState.nationStats[statsKey] += effect.delta;
-                }
-                break;
+              }
+
+              console.log(`[ChangeQueue] 已加入待结算队列: ${decision.effects.length} 个事件效果`);
             }
-          });
+            break;
+          }
           
-          set({ 
-            gameState: newState,
-            turnLog: [...turnLog, `决策：${decision.choiceId || decision.policyId}`]
-          });
+          case 'research_policy':
+          case 'start_policy_research': {
+            // 处理国策研究
+            if (decision.policyId) {
+              const policyStoreModule = await import('@/store/policyStore') as any;
+              const policyStore = policyStoreModule.usePolicyStore.getState();
+              const policy = policyStore.getPolicyById(decision.policyId);
+              
+              if (policy && policy.cost > 0) {
+                // 将国策费用添加到ChangeQueue
+                changeQueue.enqueue({
+                  type: 'treasury',
+                  target: 'treasury',
+                  field: 'gold',
+                  delta: -policy.cost,
+                  description: `研究国策费用: ${policy.name}`,
+                  source: decision.policyId
+                });
+                
+                // 记录到AccountingSystem
+                accountingSystem.addExpense(
+                  `研究国策: ${policy.name}`,
+                  policy.cost,
+                  '国策研究'
+                );
+                
+                console.log(`[ChangeQueue] 已加入待结算队列: 国策研究费用 ${policy.cost}`);
+              }
+              
+              // 开始研究（这不需要修改国库，只修改国策状态）
+              if (decision.type === 'start_policy_research') {
+                policyStore.startResearch(decision.policyId, gameState);
+                set({
+                  turnLog: [...turnLog, `开始研究国策：${policy?.name}（预计${policy?.researchTurns}回合完成）`]
+                });
+              }
+            }
+            break;
+          }
+          
+          case 'cancel_policy_research': {
+            // 取消国策研究
+            if (decision.policyId) {
+              const policyStoreModule = await import('@/store/policyStore') as any;
+              const policyStore = policyStoreModule.usePolicyStore.getState();
+              policyStore.cancelResearch(decision.policyId);
+              
+              const policy = policyStore.getPolicyById(decision.policyId);
+              if (policy) {
+                set({
+                  turnLog: [...turnLog, `取消研究国策：${policy.name}`]
+                });
+              }
+            }
+            break;
+          }
+          
+          default: {
+            // 处理其他类型的决策效果
+            if (decision.effects && decision.effects.length > 0) {
+              console.log(`[GameStore] Queueing ${decision.effects.length} decision effects`);
+              
+              for (const effect of decision.effects) {
+                changeQueue.enqueue({
+                  type: effect.type as any,
+                  target: effect.target,
+                  field: effect.field,
+                  delta: effect.delta,
+                  newValue: effect.newValue,
+                  description: effect.description || '决策效果',
+                  source: decision.choiceId || 'unknown'
+                });
+                
+                // 财务效果记录到AccountingSystem
+                if (effect.type === 'treasury' && effect.field === 'gold') {
+                  if (effect.delta > 0) {
+                    accountingSystem.addIncome(
+                      effect.description || '收入', 
+                      effect.delta, 
+                      '决策'
+                    );
+                  } else if (effect.delta < 0) {
+                    accountingSystem.addExpense(
+                      effect.description || '支出', 
+                      Math.abs(effect.delta), 
+                      '决策'
+                    );
+                  }
+                }
+              }
+            }
+          }
         }
         
+        // 记录决策到日志
+        set({
+          turnLog: [...turnLog, `决策：${decision.choiceId || decision.policyId || '未知决策'}（待结算）`]
+        });
+        
+        // 触发决策事件
         emitGameEvent('decision:made', decision);
+        
+        console.log(`[GameStore] Decision queued successfully. Queue length: ${changeQueue.length}`);
       },
 
       setCurrentEvent: (event) => {
@@ -345,7 +446,7 @@ export const useGameStore = create<GameStore>()(
             isLoading: false,
             gameState: {
               turn: 1,
-              date: '崇祯元年正月',
+              date: '崇祯1年1月',
               phase: 'morning',
               treasury: { gold: 800, grain: 500, transactions: [] },
               provinces,
@@ -385,7 +486,7 @@ export const useGameStore = create<GameStore>()(
         set({ error });
       },
 
-      adjustProvinceTaxRate: (provinceId: string, rate: number) => {
+      adjustProvinceTaxRate: async (provinceId: string, rate: number) => {
         const { gameState, turnLog } = get();
         if (!gameState) return;
         
@@ -394,31 +495,46 @@ export const useGameStore = create<GameStore>()(
         
         if (!province) return;
         
-        updateProvince(provinceId, { taxRate: clampedRate });
-        
         const oldRate = province.taxRate;
-        let civilUnrest = province.civilUnrest;
         
+        // 将税率调整添加到 ChangeQueue，等待回合结算
+        // 不立即修改状态！
+        const { changeQueue } = await import('@/engine/ChangeQueue');
+        
+        // 1. 税率变动（使用 newValue 模式，因为这是绝对值）
+        changeQueue.enqueue({
+          type: 'province',
+          target: provinceId,
+          field: 'taxRate',
+          newValue: clampedRate, // 新值（绝对值）
+          description: `${province.name} 税率调整: ${(oldRate * 100).toFixed(0)}% → ${(clampedRate * 100).toFixed(0)}%`,
+          source: '税率调整'
+        });
+        
+        // 2. 民乱变动（如果税率变化大）
+        let civilUnrestDelta = 0;
         if (clampedRate > oldRate + 0.1) {
-          civilUnrest = Math.min(100, civilUnrest + Math.floor((clampedRate - oldRate) * 30));
+          civilUnrestDelta = Math.floor((clampedRate - oldRate) * 30);
         } else if (clampedRate < oldRate - 0.1) {
-          civilUnrest = Math.max(0, civilUnrest - Math.floor((oldRate - clampedRate) * 15));
+          civilUnrestDelta = -Math.floor((oldRate - clampedRate) * 15);
         }
         
-        updateProvince(provinceId, { civilUnrest });
+        if (civilUnrestDelta !== 0) {
+          changeQueue.enqueue({
+            type: 'province',
+            target: provinceId,
+            field: 'civilUnrest',
+            delta: civilUnrestDelta,
+            description: `${province.name} 民乱变化: ${civilUnrestDelta > 0 ? '+' : ''}${civilUnrestDelta}`,
+            source: '税率调整'
+          });
+        }
         
-        const updatedProvinces = gameState.provinces.map(p => 
-          p.id === provinceId 
-            ? { ...p, taxRate: clampedRate, civilUnrest, taxRevenue: p.population * clampedRate * 0.1 }
-            : p
-        );
+        // 注意：这里不修改 gameState，只记录到队列
+        // 状态将在回合结束时统一更新
         
         set({
-          gameState: {
-            ...gameState,
-            provinces: updatedProvinces
-          },
-          turnLog: [...turnLog, `税率调整：${province.name} 税率调整为 ${(clampedRate * 100).toFixed(0)}%`]
+          turnLog: [...turnLog, `税率调整：${province.name} 税率调整为 ${(clampedRate * 100).toFixed(0)}%（待结算）`]
         });
       },
 
@@ -501,6 +617,16 @@ export const useGameStore = create<GameStore>()(
             error: `效果应用失败: ${error instanceof Error ? error.message : '未知错误'}` 
           });
         }
+      },
+
+      setCurrentLedger: (ledger) => {
+        set({ currentLedger: ledger });
+        emitGameEvent('ledger:updated', { ledger });
+      },
+
+      clearPendingDecisions: () => {
+        set({ pendingDecisions: [] });
+        logger.info('[GameStore] Pending decisions cleared');
       }
     }),
     {

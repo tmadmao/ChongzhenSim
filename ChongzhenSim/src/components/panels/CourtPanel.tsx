@@ -11,6 +11,7 @@ export function CourtPanel() {
     memorials,
     currentMemorialIndex,
     choiceRecords,
+    hasCourtedThisTurn,
     initCourt,
     startOpening,
     proceedToMemorial,
@@ -23,7 +24,8 @@ export function CourtPanel() {
     const loadMemorials = async () => {
       if (gameState) {
         const memorials = await courtSystem.getMemorialsForTurn(gameState.turn, gameState);
-        initCourt(memorials, DAY1_META);
+        const sessionMeta = courtSystem.getSessionMeta(gameState.turn);
+        initCourt(memorials, sessionMeta);
       }
     };
     loadMemorials();
@@ -33,12 +35,16 @@ export function CourtPanel() {
     startOpening();
   };
 
-  const handleMakeChoice = (memorial: any, choice: any) => {
-    makeChoice(memorial, choice);
+  const handleMakeChoice = async (memorial: any, choice: any) => {
+    await makeChoice(memorial, choice);
   };
 
   const handleNextMemorial = () => {
     nextMemorial();
+  };
+
+  const handleDismissCourt = () => {
+    dismissCourt();
   };
 
   return (
@@ -57,7 +63,7 @@ export function CourtPanel() {
 
       {/* 主体区域 */}
       <div className="flex-1 overflow-y-auto p-6 palace-scrollbar">
-        {phase === 'closed' && <CourtEntrance onStartCourt={handleStartCourt} />}
+        {phase === 'closed' && <CourtEntrance onStartCourt={handleStartCourt} hasCourtedThisTurn={hasCourtedThisTurn} />}
         {phase === 'opening' && <CourtOpening />}
         {phase === 'memorial' && (
           <CourtMemorialView
@@ -69,6 +75,7 @@ export function CourtPanel() {
         {phase === 'summary' && (
           <CourtSummaryView
             choiceRecords={choiceRecords}
+            onDismissCourt={handleDismissCourt}
           />
         )}
       </div>
@@ -76,7 +83,26 @@ export function CourtPanel() {
   );
 }
 
-function CourtEntrance({ onStartCourt }: { onStartCourt: () => void }) {
+function CourtEntrance({ onStartCourt, hasCourtedThisTurn }: { onStartCourt: () => void; hasCourtedThisTurn: boolean }) {
+  if (hasCourtedThisTurn) {
+    return (
+      <div className="palace-card p-8 text-center">
+        <div className="palace-title text-3xl mb-6">皇极殿</div>
+        <div className="text-palace-text-muted mb-8">
+          崇祯皇帝开大朝会的地方
+        </div>
+        <div className="text-palace-text mb-12 max-w-2xl mx-auto">
+          <p className="mb-4">今日早朝已结束，诸臣已退去。</p>
+          <p className="mb-4">陛下可召见大臣咨询，或者结束当前回合开始结算。</p>
+          <p>结束回合后，将进入下一天的早朝。</p>
+        </div>
+        <div className="text-palace-text-muted text-sm">
+          今日已退朝
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="palace-card p-8 text-center">
       <div className="palace-title text-3xl mb-6">皇极殿</div>
@@ -210,10 +236,12 @@ function CourtMemorialView({
   );
 }
 
-function CourtSummaryView({ 
-  choiceRecords 
-}: { 
-  choiceRecords: any[]; 
+function CourtSummaryView({
+  choiceRecords,
+  onDismissCourt
+}: {
+  choiceRecords: any[];
+  onDismissCourt: () => void;
 }) {
   return (
     <div className="palace-card p-8">
@@ -248,10 +276,16 @@ function CourtSummaryView({
       </div>
       <div className="text-center mt-8">
         <div className="text-palace-text mb-4">
-          今日已退朝，陛下可召见大臣咨询等，或者结束当前回合开始结算
+          今日早朝已结束，效果已加入结算队列
         </div>
-        <div className="text-palace-text-muted text-sm">
-          结束回合后，皇极殿将进入下一天的奏报
+        <button
+          onClick={onDismissCourt}
+          className="palace-button-gold px-8 py-3 text-lg"
+        >
+          鸣鞭·退朝
+        </button>
+        <div className="text-palace-text-muted text-sm mt-4">
+          退朝后效果将在回合结算时统一应用
         </div>
       </div>
     </div>

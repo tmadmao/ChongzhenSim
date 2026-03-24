@@ -1,0 +1,340 @@
+/**
+ * 统一变动队列系统 - 物理隔离实现
+ * 
+ * 核心原则：
+ * 1. 所有数据变动都先进入队列，不立即执行
+ * 2. 只有 applyAll() 方法可以修改游戏状态
+ * 3. 只有 GameEngine.endTurn 可以调用 applyAll()
+ * 4. 结算完成后清空队列
+ * 5. 强制日志审计 - 所有变动必须记录
+ */
+
+import type { GameState } from '../core/types';
+import { createLogger } from '../utils/logger';
+
+const logger = createLogger('ChangeQueue');
+
+// 变动类型
+export type ChangeType = 
+  | 'treasury'      // 国库变动
+  | 'province'      // 省份变动
+  | 'faction'       // 派系变动
+  | 'nation'        // 国家属性变动
+  | 'official'      // 官员变动
+  | 'event';        // 事件效果
+
+// 变动请求接口
+export interface ChangeRequest {
+  id: string;
+  type: ChangeType;
+  target: string;       // 目标ID（如省份ID、官员ID等）
+  field: string;        // 字段名
+  delta?: number;       // 变动值（用于累积的数值，如国库银两）
+  newValue?: number;    // 新值（用于绝对值，如税率）
+  description: string;  // 描述
+  source: string;       // 来源（如事件ID、政策ID等）
+  timestamp: number;    // 加入队列的时间戳
+}
+
+// 变动队列类 - 单例模式
+export class ChangeQueue {
+  private queue: ChangeRequest[] = [];
+  private static instance: ChangeQueue;
+  private isApplying: boolean = false; // 防止重入
+
+  private constructor() {
+    logger.info('[ChangeQueue] Initialized');
+  }
+
+  static getInstance(): ChangeQueue {
+    if (!ChangeQueue.instance) {
+      ChangeQueue.instance = new ChangeQueue();
+    }
+    return ChangeQueue.instance;
+  }
+
+  /**
+   * 添加变动到队列
+   * 这是唯一允许添加变动的方法
+   */
+  enqueue(change: Omit<ChangeRequest, 'id' | 'timestamp'>): void {
+    const id = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const timestamp = Date.now();
+    const request: ChangeRequest = { ...change, id, timestamp };
+    
+    this.queue.push(request);
+    
+    // 强制日志审计
+    logger.info(`[ChangeQueue] Enqueued: ${request.description}`, {
+      id: request.id,
+      type: request.type,
+      target: request.target,
+      field: request.field,
+      delta: request.delta,
+      newValue: request.newValue,
+      source: request.source,
+      queueLength: this.queue.length
+    });
+    
+    console.log(`[ChangeQueue] 已加入待结算队列: ${request.description}`);
+  }
+
+  /**
+   * 获取所有变动（只读副本）
+   */
+  getAll(): ReadonlyArray<ChangeRequest> {
+    return Object.freeze([...this.queue]);
+  }
+
+  /**
+   * 按类型获取变动（只读副本）
+   */
+  getByType(type: ChangeType): ReadonlyArray<ChangeRequest> {
+    return Object.freeze(this.queue.filter(c => c.type === type));
+  }
+
+  /**
+   * 获取队列长度
+   */
+  get length(): number {
+    return this.queue.length;
+  }
+
+  /**
+   * 应用所有变动到游戏状态
+   * 
+   * ⚠️ 警告：只有 GameEngine.endTurn 可以调用此方法！
+   * 
+   * @param state 当前游戏状态
+   * @returns 新的游戏状态和变动日志
+   */
+  applyAll(state: GameState): { newState: GameState; logs: string[]; appliedCount: number } {
+    // 防止重入
+    if (this.isApplying) {
+      logger.error('[ChangeQueue] applyAll called while already applying!');
+      throw new Error('ChangeQueue.applyAll is already in progress');
+    }
+    
+    this.isApplying = true;
+    logger.info(`[ChangeQueue] Starting applyAll with ${this.queue.length} changes`);
+    
+    let newState = JSON.parse(JSON.stringify(state)); // 深拷贝
+    const logs: string[] = [];
+    let appliedCount = 0;
+
+    try {
+      // 按加入顺序处理所有变动
+      for (let i = 0; i < this.queue.length; i++) {
+        const change = this.queue[i];
+        
+        logger.info(`[ChangeQueue] Applying change ${i + 1}/${this.queue.length}: ${change.description}`, {
+          id: change.id,
+          type: change.type,
+          target: change.target,
+          field: change.field,
+          delta: change.delta,
+          newValue: change.newValue
+        });
+        
+        switch (change.type) {
+          case 'treasury':
+            this.applyTreasuryChange(newState, change, logs);
+            break;
+          case 'province':
+            this.applyProvinceChange(newState, change, logs);
+            break;
+          case 'faction':
+            this.applyFactionChange(newState, change, logs);
+            break;
+          case 'nation':
+            this.applyNationChange(newState, change, logs);
+            break;
+          case 'official':
+            this.applyOfficialChange(newState, change, logs);
+            break;
+          case 'event':
+            this.applyEventChange(newState, change, logs);
+            break;
+          default:
+            logger.warn(`[ChangeQueue] Unknown change type: ${change.type}`);
+        }
+        
+        appliedCount++;
+      }
+      
+      logger.info(`[ChangeQueue] Applied ${appliedCount} changes successfully`);
+      
+    } catch (error) {
+      logger.error('[ChangeQueue] Error applying changes:', error);
+      throw error;
+    } finally {
+      this.isApplying = false;
+    }
+
+    return { newState, logs, appliedCount };
+  }
+
+  /**
+   * 清空队列
+   * 应在 applyAll 成功后调用
+   */
+  clear(): void {
+    const count = this.queue.length;
+    this.queue = [];
+    logger.info(`[ChangeQueue] Cleared ${count} changes from queue`);
+  }
+
+  /**
+   * 获取变动统计
+   */
+  getStats(): { total: number; byType: Record<ChangeType, number> } {
+    const byType: Record<ChangeType, number> = {
+      treasury: 0,
+      province: 0,
+      faction: 0,
+      nation: 0,
+      official: 0,
+      event: 0
+    };
+
+    for (const change of this.queue) {
+      byType[change.type]++;
+    }
+
+    return { total: this.queue.length, byType };
+  }
+
+  // ==================== 私有方法：应用各类变动 ====================
+
+  private applyTreasuryChange(state: GameState, change: ChangeRequest, logs: string[]): void {
+    // 安全检查：确保 treasury 存在
+    if (!state.treasury) {
+      logger.warn(`[ChangeQueue] state.treasury is undefined`);
+      return;
+    }
+
+    if (change.target === 'gold') {
+      const oldValue = state.treasury.gold ?? 0;
+      const newValue = Math.max(0, oldValue + (change.delta || 0));
+      state.treasury.gold = newValue;
+
+      const logMsg = `国库银两: ${oldValue.toFixed(1)} → ${newValue.toFixed(1)} (${change.delta && change.delta >= 0 ? '+' : ''}${change.delta || 0}) [${change.description}]`;
+      logs.push(logMsg);
+      logger.info(`[ChangeQueue] ${logMsg}`);
+
+    } else if (change.target === 'grain') {
+      const oldValue = state.treasury.grain ?? 0;
+      const newValue = Math.max(0, oldValue + (change.delta || 0));
+      state.treasury.grain = newValue;
+
+      const logMsg = `国库粮食: ${oldValue.toFixed(1)} → ${newValue.toFixed(1)} (${change.delta && change.delta >= 0 ? '+' : ''}${change.delta || 0}) [${change.description}]`;
+      logs.push(logMsg);
+      logger.info(`[ChangeQueue] ${logMsg}`);
+    }
+  }
+
+  private applyProvinceChange(state: GameState, change: ChangeRequest, logs: string[]): void {
+    // 安全检查：确保 provinces 数组存在
+    if (!state.provinces || !Array.isArray(state.provinces)) {
+      logger.warn(`[ChangeQueue] state.provinces is undefined or not an array`);
+      return;
+    }
+
+    const provinceIndex = state.provinces.findIndex(p => p.id === change.target);
+    if (provinceIndex === -1) {
+      logger.warn(`[ChangeQueue] Province not found: ${change.target}`);
+      return;
+    }
+
+    const province = state.provinces[provinceIndex];
+    const oldValue = (province as any)[change.field];
+
+    if (change.newValue !== undefined) {
+      // 绝对值模式
+      (province as any)[change.field] = change.newValue;
+      const logMsg = `${province.name}.${change.field}: ${oldValue} → ${change.newValue} [${change.description}]`;
+      logs.push(logMsg);
+      logger.info(`[ChangeQueue] ${logMsg}`);
+    } else if (change.delta !== undefined) {
+      // 变动值模式
+      const newValue = Math.max(0, (oldValue || 0) + change.delta);
+      (province as any)[change.field] = newValue;
+      const logMsg = `${province.name}.${change.field}: ${oldValue} → ${newValue} (${change.delta >= 0 ? '+' : ''}${change.delta}) [${change.description}]`;
+      logs.push(logMsg);
+      logger.info(`[ChangeQueue] ${logMsg}`);
+    }
+  }
+
+  private applyFactionChange(state: GameState, change: ChangeRequest, logs: string[]): void {
+    // 安全检查：确保 factions 数组存在
+    if (!state.factions || !Array.isArray(state.factions)) {
+      logger.warn(`[ChangeQueue] state.factions is undefined or not an array`);
+      return;
+    }
+
+    const faction = state.factions.find(f => f.id === change.target);
+    if (!faction) {
+      logger.warn(`[ChangeQueue] Faction not found: ${change.target}`);
+      return;
+    }
+
+    const oldValue = (faction as any)[change.field] || 0;
+    const newValue = Math.max(0, Math.min(100, oldValue + (change.delta || 0)));
+    (faction as any)[change.field] = newValue;
+
+    const logMsg = `${faction.name}.${change.field}: ${oldValue} → ${newValue} (${change.delta && change.delta >= 0 ? '+' : ''}${change.delta}) [${change.description}]`;
+    logs.push(logMsg);
+    logger.info(`[ChangeQueue] ${logMsg}`);
+  }
+
+  private applyNationChange(state: GameState, change: ChangeRequest, logs: string[]): void {
+    // 安全检查：确保 nationStats 存在
+    if (!state.nationStats) {
+      logger.warn(`[ChangeQueue] state.nationStats is undefined`);
+      return;
+    }
+
+    const oldValue = (state.nationStats as any)[change.field] || 0;
+    const newValue = Math.max(0, Math.min(100, oldValue + (change.delta || 0)));
+    (state.nationStats as any)[change.field] = newValue;
+
+    const logMsg = `国家属性.${change.field}: ${oldValue} → ${newValue} (${change.delta && change.delta >= 0 ? '+' : ''}${change.delta}) [${change.description}]`;
+    logs.push(logMsg);
+    logger.info(`[ChangeQueue] ${logMsg}`);
+  }
+
+  private applyOfficialChange(state: GameState, change: ChangeRequest, logs: string[]): void {
+    // 安全检查：确保 officials 数组存在
+    if (!state.officials || !Array.isArray(state.officials)) {
+      logger.warn(`[ChangeQueue] state.officials is undefined or not an array`);
+      return;
+    }
+
+    const official = state.officials.find(o => o.id === change.target);
+    if (!official) {
+      logger.warn(`[ChangeQueue] Official not found: ${change.target}`);
+      return;
+    }
+
+    const oldValue = (official as any)[change.field] || 0;
+    const newValue = Math.max(0, Math.min(100, oldValue + (change.delta || 0)));
+    (official as any)[change.field] = newValue;
+
+    const logMsg = `${official.name}.${change.field}: ${oldValue} → ${newValue} (${change.delta && change.delta >= 0 ? '+' : ''}${change.delta}) [${change.description}]`;
+    logs.push(logMsg);
+    logger.info(`[ChangeQueue] ${logMsg}`);
+  }
+
+  private applyEventChange(state: GameState, change: ChangeRequest, logs: string[]): void {
+    // 事件类型的变动可以根据需要特殊处理
+    const logMsg = `事件效果: [${change.description}]`;
+    logs.push(logMsg);
+    logger.info(`[ChangeQueue] ${logMsg}`);
+  }
+}
+
+// 导出单例实例
+export const changeQueue = ChangeQueue.getInstance();
+
+// 类型导出
+export type { ChangeRequest };

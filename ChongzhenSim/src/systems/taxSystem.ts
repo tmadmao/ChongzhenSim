@@ -1,6 +1,13 @@
 import type { Province, TaxResult, TaxReport, NationStats } from '../core/types';
-import { updateProvince, insertTransaction, generateId } from '../db/database';
 import { GAME_CONFIG } from '../config/gameConfig';
+import { accountingSystem } from '../engine/AccountingSystem';
+
+/**
+ * 税收系统
+ * 
+ * 注意：此系统只负责计算税收，不直接修改数据库
+ * 所有修改都在 GameLoop.tick 的结算阶段统一执行
+ */
 
 export class TaxSystem {
   private currentTurn: number = 1;
@@ -11,6 +18,10 @@ export class TaxSystem {
     this.currentDate = date;
   }
 
+  /**
+   * 计算单个省份的税收
+   * 只计算，不修改任何数据
+   */
   calculateProvinceTax(province: Province, nationStats: NationStats): TaxResult {
     const baseTax = province.population * province.taxRate * GAME_CONFIG.TAX.BASE_TAX_RATE;
     
@@ -33,69 +44,40 @@ export class TaxSystem {
     };
   }
 
+  /**
+   * 计算所有省份的税收
+   * 只计算，不修改任何数据
+   */
   calculateAllProvincesTax(provinces: Province[], nationStats: NationStats): TaxResult[] {
     return provinces.map(province => this.calculateProvinceTax(province, nationStats));
   }
 
-  applyTaxEffects(provinces: Province[], taxResults: TaxResult[]): void {
-    taxResults.forEach(result => {
-      const province = provinces.find(p => p.id === result.provinceId);
-      if (!province) return;
-      
-      updateProvince(result.provinceId, { taxRevenue: result.actualTax });
-      
-      insertTransaction({
-        id: generateId(),
-        turn: this.currentTurn,
-        date: this.currentDate,
-        type: 'income',
-        category: 'tax',
-        amount: result.actualTax,
-        provinceId: result.provinceId,
-        description: `${result.provinceName}税收`,
-        createdAt: Date.now()
-      });
-      
-      if (province.taxRate > GAME_CONFIG.TAX.TAX_UNREST.HIGH_TAX_THRESHOLD) {
-        const unrestIncrease = Math.floor((province.taxRate - GAME_CONFIG.TAX.TAX_UNREST.HIGH_TAX_THRESHOLD) * GAME_CONFIG.TAX.TAX_UNREST.UNREST_PER_TAX_ABOVE_THRESHOLD);
-        updateProvince(result.provinceId, {
-          civilUnrest: Math.min(100, province.civilUnrest + unrestIncrease)
-        });
+  /**
+   * 计算税收并记录到 AccountingSystem
+   * 在 GameLoop.tick 的 Step B 中调用
+   */
+  calculateTax(provinces: Province[]): TaxResult[] {
+    // 这里简化处理，使用默认的 nationStats
+    const nationStats = { peopleMorale: 50 };
+    const results = this.calculateAllProvincesTax(provinces, nationStats);
+    
+    // 记录到 AccountingSystem（不直接修改数据库）
+    results.forEach(result => {
+      if (result.actualTax > 0) {
+        accountingSystem.addIncome(
+          `${result.provinceName}税收`,
+          result.actualTax,
+          `${result.provinceName}税收收入`
+        );
       }
     });
+    
+    return results;
   }
 
-  adjustTaxRate(provinceId: string, newRate: number, provinces: Province[]): boolean {
-    if (newRate < 0 || newRate > 1) {
-      console.warn('[TaxSystem] Invalid tax rate:', newRate);
-      return false;
-    }
-    
-    const province = provinces.find(p => p.id === provinceId);
-    if (!province) {
-      console.warn('[TaxSystem] Province not found:', provinceId);
-      return false;
-    }
-    
-    const oldRate = province.taxRate;
-    updateProvince(provinceId, { taxRate: newRate });
-    
-    const rateChange = newRate - oldRate;
-    if (rateChange > GAME_CONFIG.TAX.TAX_UNREST.RATE_CHANGE_THRESHOLD) {
-      const unrestIncrease = Math.floor(rateChange * GAME_CONFIG.TAX.TAX_UNREST.UNREST_PER_RATE_INCREASE);
-      updateProvince(provinceId, {
-        civilUnrest: Math.min(100, province.civilUnrest + unrestIncrease)
-      });
-    } else if (rateChange < -GAME_CONFIG.TAX.TAX_UNREST.RATE_CHANGE_THRESHOLD) {
-      const unrestDecrease = Math.floor(Math.abs(rateChange) * GAME_CONFIG.TAX.TAX_UNREST.UNREST_PER_RATE_DECREASE);
-      updateProvince(provinceId, {
-        civilUnrest: Math.max(0, province.civilUnrest - unrestDecrease)
-      });
-    }
-    
-    return true;
-  }
-
+  /**
+   * 获取税收报告
+   */
   getTaxReport(taxResults: TaxResult[]): TaxReport {
     const totalIncome = taxResults.reduce((sum, r) => sum + r.actualTax, 0);
     
@@ -110,15 +92,24 @@ export class TaxSystem {
     };
   }
 
+  /**
+   * 获取总税收收入
+   */
   getTotalTaxRevenue(taxResults: TaxResult[]): number {
     return taxResults.reduce((sum, r) => sum + r.actualTax, 0);
   }
 
+  /**
+   * 获取税收效率
+   */
   getTaxEfficiency(_province: Province, taxResult: TaxResult): number {
     if (taxResult.baseTax === 0) return 0;
     return Math.round((taxResult.actualTax / taxResult.baseTax) * 100);
   }
 
+  /**
+   * 获取税收负担等级
+   */
   getTaxBurden(province: Province): 'light' | 'moderate' | 'heavy' | 'extreme' {
     if (province.taxRate <= GAME_CONFIG.TAX.TAX_BURDEN.LIGHT_THRESHOLD) return 'light';
     if (province.taxRate <= GAME_CONFIG.TAX.TAX_BURDEN.MODERATE_THRESHOLD) return 'moderate';
@@ -126,6 +117,9 @@ export class TaxSystem {
     return 'extreme';
   }
 
+  /**
+   * 估算税收收入
+   */
   estimateTaxRevenue(provinces: Province[], nationStats: NationStats): number {
     return provinces.reduce((sum, province) => {
       const result = this.calculateProvinceTax(province, nationStats);

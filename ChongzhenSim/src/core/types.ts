@@ -207,7 +207,8 @@ export type GameEventType =
   | 'choice:selected'
   | 'game:over'
   | 'error'
-  | 'effects:applied';
+  | 'effects:applied'
+  | 'ledger:updated';
 
 
 export interface GameEvent {

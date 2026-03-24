@@ -1,6 +1,7 @@
 import type { Province, ExpenseBreakdown, TreasurySnapshot, ChartData, GameState } from '../core/types';
-import { insertTransaction, generateId, getTreasuryHistory, getTotalGold } from '../db/database';
+import { getTreasuryHistory, getTotalGold } from '../db/database';
 import { GAME_CONFIG } from '../config/gameConfig';
+import { accountingSystem } from '../engine/AccountingSystem';
 
 export class FinanceSystem {
   private currentTurn: number = 1;
@@ -48,29 +49,9 @@ export class FinanceSystem {
   }
 
   recordExpenses(expenses: ExpenseBreakdown): void {
-    const categories: Array<{ key: keyof Omit<ExpenseBreakdown, 'total' | 'details'>; category: string; description: string }> = [
-      { key: 'military', category: 'military', description: '军费开支' },
-      { key: 'salary', category: 'salary', description: '官员俸禄' },
-      { key: 'disaster', category: 'disaster', description: '灾害救济' },
-      { key: 'border', category: 'border_defense', description: '边境防御' },
-      { key: 'corruption', category: 'corruption_loss', description: '贪腐损耗' }
-    ];
-    
-    categories.forEach(({ key, category, description }) => {
-      const amount = expenses[key];
-      if (amount > 0) {
-        insertTransaction({
-          id: generateId(),
-          turn: this.currentTurn,
-          date: this.currentDate,
-          type: 'expense',
-          category,
-          amount,
-          description,
-          createdAt: Date.now()
-        });
-      }
-    });
+    // 此方法不再直接写入数据库
+    // 支出记录已在gameLoop.ts中通过accountingSystem统一处理
+    // 保留此方法用于向后兼容
   }
 
   updateTreasury(income: number, expenses: ExpenseBreakdown, currentGold: number): TreasurySnapshot {
@@ -151,19 +132,9 @@ export class FinanceSystem {
   }
 
   spend(amount: number, category: string, description: string): boolean {
-    const currentGold = this.getCurrentTreasury();
-    if (!this.canAfford(amount, currentGold)) return false;
-    
-    insertTransaction({
-      id: generateId(),
-      turn: this.currentTurn,
-      date: this.currentDate,
-      type: 'expense',
-      category,
-      amount,
-      description,
-      createdAt: Date.now()
-    });
+    // 记录支出到中央结算系统
+    // 数据库写入将在gameLoop的最终结算时统一进行
+    accountingSystem.addExpense(category, amount, description);
     
     return true;
   }

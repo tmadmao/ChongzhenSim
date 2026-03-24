@@ -1,6 +1,7 @@
 // 固定剧本事件：开局必触发 + 1628年必触发 + 事件中断规则
+// 使用新的 OptionEffect 格式，支持 configKey 引用 gameConfig.ts 中的常量
 
-import type { GameEffect } from '@/core/types'
+import type { OptionEffect } from '@/api/schemas'
 
 export type EventStatus = 'pending' | 'active' | 'completed' | 'failed' | 'locked'
 export type EventPriority = 'urgent' | 'important' | 'normal'
@@ -28,23 +29,23 @@ export interface ScriptedEvent {
     id: string
     text: string
     hint: string                      // 暗示结果
-    effects: GameEffect[]
+    effects: OptionEffect[]           // 使用新的 OptionEffect 格式
     // 选择此项后锁死的事件
     locksEvents?: string[]
     // 选择此项后开启的事件
     unlocksEvents?: string[]
   }[]
   // 立即效果（不管选哪项都触发）
-  immediateEffects?: GameEffect[]
+  immediateEffects?: OptionEffect[]   // 使用新的 OptionEffect 格式
   // 中断条件
   interruptConditions?: {
     characterDead?: string            // 关键人物死亡→强制失败
     factionDestroyed?: string         // 势力灭亡→永久关闭
     turnsWithoutAction?: number       // 超过N季度未处理→自动恶化
   }
-  interruptConsequences?: GameEffect[]
+  interruptConsequences?: OptionEffect[]  // 使用新的 OptionEffect 格式
   // 自动恶化效果（超时未处理）
-  escalationEffects?: GameEffect[]
+  escalationEffects?: OptionEffect[]      // 使用新的 OptionEffect 格式
 }
 
 export const SCRIPTED_EVENTS: ScriptedEvent[] = [
@@ -62,8 +63,8 @@ export const SCRIPTED_EVENTS: ScriptedEvent[] = [
         text: '高调即位，昭告天下革除弊政',
         hint: '威望大涨，但阉党警觉',
         effects: [
-          { type: 'nation', target: 'emperor', field: 'prestige', delta: 20, description: '威望+20' },
-          { type: 'minister', target: 'eunuch_party', field: 'support', delta: -15, description: '阉党警惕' },
+          { type: 'nation', target: 'emperor', field: 'prestige', value: 20, mode: 'delta', description: '威望+20' },
+          { type: 'minister', target: 'eunuch_party', field: 'support', value: -15, mode: 'delta', description: '阉党警惕' },
         ],
         unlocksEvents: ['purge_eunuch_party'],
       },
@@ -72,7 +73,7 @@ export const SCRIPTED_EVENTS: ScriptedEvent[] = [
         text: '韬光养晦，暗中观察',
         hint: '稳妥但错失先机',
         effects: [
-          { type: 'nation', target: 'emperor', field: 'prestige', delta: 5, description: '威望小涨' },
+          { type: 'nation', target: 'emperor', field: 'prestige', value: 5, mode: 'delta', description: '威望小涨' },
         ],
       },
     ],
@@ -94,9 +95,9 @@ export const SCRIPTED_EVENTS: ScriptedEvent[] = [
         text: '立即赐死，清除阉党',
         hint: '阉党覆灭，东林党上台，但朝局震荡',
         effects: [
-          { type: 'nation', target: 'emperor', field: 'prestige', delta: 15, description: '威望+15' },
-          { type: 'minister', target: 'eunuch_party', field: 'support', delta: -60, description: '阉党瓦解' },
-          { type: 'minister', target: 'donglin', field: 'support', delta: 25, description: '东林党得势' },
+          { type: 'nation', target: 'emperor', field: 'prestige', value: 15, mode: 'delta', description: '威望+15' },
+          { type: 'minister', target: 'eunuch_party', field: 'support', value: -60, mode: 'delta', description: '阉党瓦解' },
+          { type: 'minister', target: 'donglin', field: 'support', value: 25, mode: 'delta', description: '东林党得势' },
         ],
         locksEvents: ['eunuch_party_comeback'],
       },
@@ -105,8 +106,8 @@ export const SCRIPTED_EVENTS: ScriptedEvent[] = [
         text: '流放凤阳，留其性命',
         hint: '较为温和，但阉党仍有复辟可能',
         effects: [
-          { type: 'nation', target: 'emperor', field: 'prestige', delta: 8, description: '威望小涨' },
-          { type: 'minister', target: 'eunuch_party', field: 'support', delta: -30, description: '阉党失势' },
+          { type: 'nation', target: 'emperor', field: 'prestige', value: 8, mode: 'delta', description: '威望小涨' },
+          { type: 'minister', target: 'eunuch_party', field: 'support', value: -30, mode: 'delta', description: '阉党失势' },
         ],
       },
       {
@@ -114,8 +115,8 @@ export const SCRIPTED_EVENTS: ScriptedEvent[] = [
         text: '暂时留用，以作制衡',
         hint: '党争加剧，但可借助阉党制约文官',
         effects: [
-          { type: 'nation', target: 'factionConflict', field: 'factionConflict', delta: 15, description: '党争+15' },
-          { type: 'minister', target: 'donglin', field: 'support', delta: -15, description: '东林党愤怒' },
+          { type: 'nation', target: 'factionConflict', field: 'factionConflict', value: 15, mode: 'delta', description: '党争+15' },
+          { type: 'minister', target: 'donglin', field: 'support', value: -15, mode: 'delta', description: '东林党愤怒' },
         ],
         unlocksEvents: ['eunuch_party_rebellion'],
       },
@@ -137,9 +138,10 @@ export const SCRIPTED_EVENTS: ScriptedEvent[] = [
         text: '拨银赈灾，安抚灾民',
         hint: '花费国库，但可遏制民变',
         effects: [
-          { type: 'treasury', target: 'treasury', field: 'gold', delta: -50, description: '赈灾花费-50万两' },
-          { type: 'nation', target: 'all', field: 'peopleMorale', delta: 10, description: '民心+10' },
-          { type: 'province', target: 'shaanxi', field: 'civilUnrest', delta: -20, description: '陕西民乱-20' },
+          // 使用 configKey 引用 gameConfig.ts 中的常量
+          { type: 'treasury', target: 'treasury', field: 'gold', configKey: 'RELIEF_COST_BASE', mode: 'delta', description: '赈灾花费' },
+          { type: 'nation', target: 'all', field: 'peopleMorale', value: 10, mode: 'delta', description: '民心+10' },
+          { type: 'province', target: 'shaanxi', field: 'civilUnrest', value: -20, mode: 'delta', description: '陕西民乱-20' },
         ],
         locksEvents: ['shaanxi_uprising_early'],
       },
@@ -148,14 +150,14 @@ export const SCRIPTED_EVENTS: ScriptedEvent[] = [
         text: '国库空虚，暂缓赈灾',
         hint: '节省开支，但民变风险大增',
         effects: [
-          { type: 'nation', target: 'all', field: 'peopleMorale', delta: -10, description: '民心-10' },
-          { type: 'province', target: 'shaanxi', field: 'civilUnrest', delta: 20, description: '陕西民乱+20' },
+          { type: 'nation', target: 'all', field: 'peopleMorale', value: -10, mode: 'delta', description: '民心-10' },
+          { type: 'province', target: 'shaanxi', field: 'civilUnrest', value: 20, mode: 'delta', description: '陕西民乱+20' },
         ],
         unlocksEvents: ['shaanxi_uprising_early', 'bandits_gao_joins'],
       },
     ],
     escalationEffects: [
-      { type: 'province', target: 'shaanxi', field: 'civilUnrest', delta: 15, description: '超时未处理，陕西局势恶化' },
+      { type: 'province', target: 'shaanxi', field: 'civilUnrest', value: 15, mode: 'delta', description: '超时未处理，陕西局势恶化' },
     ],
     interruptConditions: { turnsWithoutAction: 2 },
   },
@@ -177,8 +179,8 @@ export const SCRIPTED_EVENTS: ScriptedEvent[] = [
         text: '彻底清算，一网打尽',
         hint: '阉党永久灭亡，但朝局震荡',
         effects: [
-          { type: 'minister', target: 'eunuch_party', field: 'support', delta: -100, description: '阉党灭亡' },
-          { type: 'nation', target: 'emperor', field: 'prestige', delta: -10, description: '震荡损威望' },
+          { type: 'minister', target: 'eunuch_party', field: 'support', value: -100, mode: 'delta', description: '阉党灭亡' },
+          { type: 'nation', target: 'emperor', field: 'prestige', value: -10, mode: 'delta', description: '震荡损威望' },
         ],
       },
       {
@@ -186,8 +188,8 @@ export const SCRIPTED_EVENTS: ScriptedEvent[] = [
         text: '清除首恶，保留中间派',
         hint: '稳妥，保留部分文官体系',
         effects: [
-          { type: 'minister', target: 'eunuch_party', field: 'support', delta: -50, description: '阉党大幅失势' },
-          { type: 'nation', target: 'emperor', field: 'prestige', delta: 5, description: '威望小涨' },
+          { type: 'minister', target: 'eunuch_party', field: 'support', value: -50, mode: 'delta', description: '阉党大幅失势' },
+          { type: 'nation', target: 'emperor', field: 'prestige', value: 5, mode: 'delta', description: '威望小涨' },
         ],
       },
     ],
@@ -213,8 +215,8 @@ export const SCRIPTED_EVENTS: ScriptedEvent[] = [
         text: '委以重任，督师辽东',
         hint: '关宁军战力大增，但承诺难以兑现',
         effects: [
-          { type: 'minister', target: 'guanning_army', field: 'support', delta: 20, description: '关宁军士气大振' },
-          { type: 'nation', target: 'all', field: 'borderThreat', delta: -10, description: '边患压力减轻' },
+          { type: 'minister', target: 'guanning_army', field: 'support', value: 20, mode: 'delta', description: '关宁军士气大振' },
+          { type: 'nation', target: 'all', field: 'borderThreat', value: -10, mode: 'delta', description: '边患压力减轻' },
         ],
         unlocksEvents: ['yuan_chonghuan_execution_risk'],
       },
@@ -223,8 +225,8 @@ export const SCRIPTED_EVENTS: ScriptedEvent[] = [
         text: '不予重用，留京闲置',
         hint: '辽东压力持续，错失良将',
         effects: [
-          { type: 'nation', target: 'all', field: 'borderThreat', delta: 15, description: '关外压力增大' },
-          { type: 'minister', target: 'guanning_army', field: 'support', delta: -10, description: '关宁军失望' },
+          { type: 'nation', target: 'all', field: 'borderThreat', value: 15, mode: 'delta', description: '关外压力增大' },
+          { type: 'minister', target: 'guanning_army', field: 'support', value: -10, mode: 'delta', description: '关宁军失望' },
         ],
       },
     ],

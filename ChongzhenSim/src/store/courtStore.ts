@@ -30,7 +30,6 @@ interface CourtStore {
   memorials: CourtMemorial[]          // 本回合的奏报列表（最多3条）
   currentMemorialIndex: number         // 当前正在处理的奏报索引（0-2）
   choiceRecords: ChoiceRecord[]        // 本回合已做的所有选择记录
-  pendingEffects: GameEffect[]         // 退朝时批量应用的所有效果
 
   isAnimating: boolean                 // 是否正在播放动画（防止连点）
   hasCourtedThisTurn: boolean          // 本回合是否已经上过朝
@@ -47,11 +46,11 @@ interface CourtStore {
   makeChoice: (
     memorial: CourtMemorial,
     choice: MemorialChoice
-  ) => void                            // 玩家做出选择
+  ) => Promise<void>                   // 玩家做出选择，立即提交效果到 ChangeQueue
 
   nextMemorial: () => void             // 推进到下一条奏报
   proceedToSummary: () => void         // 进入退朝总结（所有奏报处理完或玩家主动退朝）
-  dismissCourt: () => void             // 确认退朝，收集所有 pendingEffects
+  dismissCourt: () => void             // 确认退朝
 
   resetCourt: () => void               // 新回合重置
 }
@@ -64,7 +63,6 @@ export const useCourtStore = create<CourtStore>((set, get) => ({
   memorials: [],
   currentMemorialIndex: 0,
   choiceRecords: [],
-  pendingEffects: [],
   isAnimating: false,
   hasCourtedThisTurn: false,
 
@@ -77,7 +75,6 @@ export const useCourtStore = create<CourtStore>((set, get) => ({
       memorials,
       currentMemorialIndex: 0,
       choiceRecords: [],
-      pendingEffects: [],
       isAnimating: false,
       hasCourtedThisTurn: false,
     })
@@ -95,8 +92,8 @@ export const useCourtStore = create<CourtStore>((set, get) => ({
     set({ phase: 'memorial', isAnimating: false })
   },
 
-  makeChoice: (memorial, choice) => {
-    const { choiceRecords, pendingEffects } = get()
+  makeChoice: async (memorial, choice) => {
+    const { choiceRecords } = get()
 
     // 收集选项效果 + 奏报立即效果
     const allEffects = [
@@ -114,9 +111,105 @@ export const useCourtStore = create<CourtStore>((set, get) => ({
       timestamp: Date.now(),
     }
 
+    // 立即将效果提交到 ChangeQueue（不再等待退朝）
+    if (allEffects.length > 0) {
+      const { changeQueue } = await import('../engine/ChangeQueue')
+      const { accountingSystem } = await import('../engine/AccountingSystem')
+      const { resolveEffectValue } = await import('../config/gameConfig')
+
+      console.log(`[CourtStore] 选择「${choice.text}」，立即提交 ${allEffects.length} 个效果到 ChangeQueue`)
+
+      for (const effect of allEffects) {
+        // 支持新旧两种格式
+        let resolvedValue: number
+        let mode: 'delta' | 'absolute'
+
+        if ('value' in effect || 'configKey' in effect) {
+          // 新格式 OptionEffect
+          resolvedValue = resolveEffectValue(
+            (effect as any).configKey,
+            (effect as any).value
+          )
+          mode = (effect as any).mode || 'delta'
+        } else {
+          // 旧格式 GameEffect (有 delta)
+          resolvedValue = (effect as any).delta || 0
+          mode = 'delta'
+        }
+
+        // 根据 mode 确定 delta 或 newValue
+        let delta: number | undefined
+        let newValue: number | undefined
+
+        if (mode === 'delta') {
+          delta = resolvedValue
+        } else {
+          newValue = resolvedValue
+        }
+
+        // 确定 ChangeType
+        let changeType: import('../engine/ChangeQueue').ChangeType
+        switch (effect.type) {
+          case 'treasury':
+            changeType = 'treasury'
+            break
+          case 'province':
+            changeType = 'province'
+            break
+          case 'minister':
+            changeType = 'official'
+            break
+          case 'nation':
+            changeType = 'nation'
+            break
+          case 'faction':
+            changeType = 'faction'
+            break
+          default:
+            changeType = 'event'
+        }
+
+        // 添加到 ChangeQueue
+        changeQueue.enqueue({
+          type: changeType,
+          target: effect.target,
+          field: effect.field,
+          delta,
+          newValue,
+          description: effect.description || '朝堂决策效果',
+          source: `朝堂[${memorial.subject}]`
+        })
+
+        console.log(`[ChangeQueue] 已加入队列: ${effect.type}.${effect.field} ${mode === 'delta' ? (delta && delta >= 0 ? '+' : '') : '='}${resolvedValue}`)
+
+        // 财务效果同时记录到 AccountingSystem
+        if (effect.type === 'treasury' && effect.field === 'gold' && delta !== undefined) {
+          if (delta > 0) {
+            accountingSystem.addIncome(
+              effect.description || '朝堂收入',
+              delta,
+              '朝堂决策'
+            )
+          } else if (delta < 0) {
+            accountingSystem.addExpense(
+              effect.description || '朝堂支出',
+              Math.abs(delta),
+              '朝堂决策'
+            )
+          }
+        }
+      }
+
+      console.log(`[CourtStore] 已提交 ${allEffects.length} 个效果到 ChangeQueue`)
+    }
+
+    // 记录选择到日志
+    const { useGameStore } = await import('./gameStore')
+    const gameStore = useGameStore.getState()
+    gameStore.addTurnLog(`[朝堂] ${memorial.ministerName} - ${memorial.subject}: ${choice.text}`)
+
     set({
       choiceRecords: [...choiceRecords, record],
-      pendingEffects: [...pendingEffects, ...allEffects],
       isAnimating: true,  // 触发效果展示动画
     })
 
@@ -140,8 +233,8 @@ export const useCourtStore = create<CourtStore>((set, get) => ({
   },
 
   dismissCourt: () => {
+    // 效果已在 makeChoice 时提交到 ChangeQueue，这里只需关闭朝堂
     set({ phase: 'closed', hasCourtedThisTurn: true })
-    // 注意：pendingEffects 在此时由 CourtPanel 统一提交给 gameStore
   },
 
   resetCourt: () => {
@@ -150,7 +243,6 @@ export const useCourtStore = create<CourtStore>((set, get) => ({
       memorials: [],
       currentMemorialIndex: 0,
       choiceRecords: [],
-      pendingEffects: [],
       isAnimating: false,
       hasCourtedThisTurn: false,
     })

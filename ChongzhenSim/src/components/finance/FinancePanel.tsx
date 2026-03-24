@@ -116,12 +116,14 @@ export function FinancePanel() {
           <div className="divider-decorated" />
 
           <div>
-            <h3 className="text-sm text-palace-text-muted mb-2">最近流水</h3>
-            <div className="space-y-2 max-h-40 overflow-y-auto palace-scrollbar">
-              {recentTransactions.slice(0, 10).map(tx => (
+            <h3 className="text-sm text-palace-text-muted mb-2">
+              最近流水 ({recentTransactions.length} 条记录)
+            </h3>
+            <div className="space-y-2 max-h-60 overflow-y-auto palace-scrollbar">
+              {recentTransactions.map((tx, index) => (
                 <div key={tx.id} className="flex justify-between items-center text-sm p-2 bg-palace-bg-light/50 rounded">
                   <span className="text-palace-text-muted truncate flex-1">
-                    {tx.description}
+                    {index + 1}. {tx.description}
                   </span>
                   <span className={`font-medium ${tx.type === 'income' ? 'text-success' : 'text-danger'}`}>
                     {tx.type === 'income' ? '+' : '-'}{tx.amount}
@@ -129,6 +131,64 @@ export function FinancePanel() {
                 </div>
               ))}
             </div>
+            
+            {/* 支出统计 */}
+            {(() => {
+              const incomeItems = recentTransactions.filter(tx => tx.type === 'income');
+              const expenseItems = recentTransactions.filter(tx => tx.type === 'expense');
+              const totalIncome = incomeItems.reduce((sum, tx) => sum + tx.amount, 0);
+              const totalExpense = expenseItems.reduce((sum, tx) => sum + tx.amount, 0);
+              
+              return (
+                <div className="mt-4 p-3 bg-palace-bg-light rounded border border-palace-border">
+                  <h4 className="text-sm font-semibold text-palace-text mb-2">支出明细统计</h4>
+                  <div className="space-y-1 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-palace-text-muted">收入项数:</span>
+                      <span className="text-success">{incomeItems.length} 项</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-palace-text-muted">支出项数:</span>
+                      <span className="text-danger">{expenseItems.length} 项</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-palace-text-muted">总收入:</span>
+                      <span className="text-success">+{totalIncome.toFixed(1)} 万两</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-palace-text-muted">总支出:</span>
+                      <span className="text-danger">-{totalExpense.toFixed(1)} 万两</span>
+                    </div>
+                    <div className="flex justify-between border-t border-palace-border pt-1 mt-1">
+                      <span className="text-palace-text-muted">净变化:</span>
+                      <span className={totalIncome - totalExpense >= 0 ? 'text-success' : 'text-danger'}>
+                        {totalIncome - totalExpense >= 0 ? '+' : ''}{(totalIncome - totalExpense).toFixed(1)} 万两
+                      </span>
+                    </div>
+                  </div>
+                  
+                  {/* 支出分类统计 */}
+                  {expenseItems.length > 0 && (
+                    <div className="mt-3">
+                      <h5 className="text-xs font-semibold text-palace-text-muted mb-1">支出分类</h5>
+                      <div className="space-y-1">
+                        {Object.entries(
+                          expenseItems.reduce((acc, tx) => {
+                            acc[tx.category] = (acc[tx.category] || 0) + tx.amount;
+                            return acc;
+                          }, {} as Record<string, number>)
+                        ).map(([category, amount]) => (
+                          <div key={category} className="flex justify-between text-xs">
+                            <span className="text-palace-text-muted">{category}:</span>
+                            <span className="text-danger">-{amount.toFixed(1)} 万两</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}

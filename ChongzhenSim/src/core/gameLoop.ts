@@ -2,9 +2,12 @@ import type { GameState, Province, NationStats, GameEffect, Minister } from './t
 import { emitGameEvent } from './eventBus';
 import { TaxSystem } from '../systems/taxSystem';
 import { FinanceSystem } from '../systems/financeSystem';
-import { updateProvince, insertGameSnapshot, generateId, saveToLocalStorage } from '../db/database';
+import { insertGameSnapshot, generateId, saveToLocalStorage, insertTransaction } from '../db/database';
 import { createLogger } from '../utils/logger';
 import { useCourtStore } from '../store/courtStore';
+import { accountingSystem } from '../engine/AccountingSystem';
+import { changeQueue } from '../engine/ChangeQueue';
+import { GAME_CONFIG } from '../config/gameConfig';
 
 const logger = createLogger('GameEngine');
 
@@ -18,127 +21,262 @@ export class GameLoop {
   }
 
   async tick(currentState: GameState): Promise<GameState> {
-    logger.info('Game tick started', { turn: currentState.turn, date: currentState.date });
-    let state = { ...currentState };
+    logger.info('========== 回合结算开始 ==========', {
+      turn: currentState.turn,
+      date: currentState.date
+    });
+
+    let state = JSON.parse(JSON.stringify(currentState)); // 深拷贝
     const logs: string[] = [];
 
-    this.taxSystem.setTurnInfo(state.turn, state.date);
-    this.financeSystem.setTurnInfo(state.turn, state.date);
-
-    // Phase 1 - 税收计算
+    // ==================== Step A: 执行 changeQueue.applyAll() ====================
+    // 处理玩家本回合的所有选择（事件效果、税率调整等）
+    logger.info('[Step A] 开始应用变动队列');
     try {
-      logger.debug('Starting tax phase');
-      state = await this.phase1_Tax(state, logs);
-      logger.debug('Tax phase completed');
+      const queueLength = changeQueue.length;
+      logger.info(`[Step A] 队列中有 ${queueLength} 个待处理变动`);
+
+      if (queueLength > 0) {
+        const { newState, logs: changeLogs, appliedCount } = changeQueue.applyAll(state);
+        state = newState;
+        logs.push(...changeLogs);
+
+        logger.info(`[Step A] 成功应用 ${appliedCount} 个变动`, {
+          queueLength,
+          appliedCount
+        });
+
+        // 显示队列统计
+        const stats = changeQueue.getStats();
+        logger.info('[Step A] 变动统计', stats);
+      } else {
+        logger.info('[Step A] 队列为空，无变动需要应用');
+      }
     } catch (error) {
-      logger.error('Phase 1 - Tax failed:', error);
-      emitGameEvent('error', { phase: 'tax', error });
+      logger.error('[Step A] 应用变动队列失败:', error);
+      throw error;
     }
 
-    // Phase 2 - 支出计算
+    // ==================== Step B: 执行 AccountingSystem.calculate() ====================
+    // 计算常规税收和维护费
+    logger.info('[Step B] 开始计算常规收支');
     try {
-      logger.debug('Starting expense phase');
-      state = await this.phase2_Expense(state, logs);
-      logger.debug('Expense phase completed');
+      this.taxSystem.setTurnInfo(state.turn, state.date);
+      this.financeSystem.setTurnInfo(state.turn, state.date);
+
+      // 计算税收
+      const taxResults = this.taxSystem.calculateTax(state.provinces);
+      const totalTax = taxResults.reduce((sum, r) => sum + r.actualTax, 0);
+
+      // 计算支出
+      const expenses = this.financeSystem.calculateExpenses(state);
+
+      // 记录到 AccountingSystem
+      accountingSystem.resetLedger(); // 先重置，确保只包含本回合的常规收支
+
+      // 记录税收收入
+      accountingSystem.addIncome('全国各省份税收总收入', totalTax, '常规税收');
+
+      // 记录各项支出
+      accountingSystem.addExpense('军队维持费用', expenses.military, '常规支出');
+      accountingSystem.addExpense('官员俸禄支出', expenses.salary, '常规支出');
+      accountingSystem.addExpense('自然灾害救济支出', expenses.disaster, '常规支出');
+      accountingSystem.addExpense('边境防御费用', expenses.border, '常规支出');
+      accountingSystem.addExpense('官员贪腐造成的财政损失', expenses.corruption, '常规支出');
+
+      logger.info('[Step B] 常规收支计算完成', {
+        totalTax,
+        totalExpense: expenses.total,
+        netIncome: totalTax - expenses.total
+      });
+
+      logs.push(`常规税收：${totalTax.toFixed(1)} 万两`);
+      logs.push(`常规支出：${expenses.total.toFixed(1)} 万两`);
+
     } catch (error) {
-      logger.error('Phase 2 - Expense failed:', error);
-      emitGameEvent('error', { phase: 'expense', error });
+      logger.error('[Step B] 计算常规收支失败:', error);
+      throw error;
     }
 
-    // Phase 3 - 省份状态更新
+    // ==================== Step C: 合并 A 和 B，执行唯一一次数据库 UPDATE ====================
+    logger.info('[Step C] 开始合并并写入数据库');
     try {
-      logger.debug('Starting province update phase');
-      state = await this.phase3_ProvinceUpdate(state, logs);
-      logger.debug('Province update phase completed');
+      // 获取 AccountingSystem 的总账
+      const ledger = accountingSystem.getLedger();
+
+      // 注意：Step A 已经通过 changeQueue.applyAll 更新了 state.treasury.gold
+      // 这里只需要记录到数据库，不需要再次修改 state
+
+      logger.info('[Step C] 准备写入数据库', {
+        treasuryGold: state.treasury.gold,
+        treasuryGrain: state.treasury.grain,
+        ledgerItems: ledger.items.length,
+        totalIncome: ledger.totalIncome,
+        totalExpense: ledger.totalExpense,
+        netChange: ledger.netChange
+      });
+
+      // 写入所有财务交易记录到数据库
+      for (const item of ledger.items) {
+        // 安全检查：确保所有必需字段都有值
+        const transaction = {
+          id: generateId(),
+          turn: state.turn ?? 1,
+          date: state.date ?? '崇祯元年正月',
+          type: item.type,
+          category: item.name ?? '未知类别',
+          amount: item.amount ?? 0,
+          description: item.description ?? '',
+          createdAt: Date.now()
+        };
+
+        // 验证数据
+        if (!transaction.id || !transaction.date) {
+          logger.error('[Step C] 交易数据验证失败', transaction);
+          continue;
+        }
+
+        insertTransaction(transaction);
+
+        logger.info(`[Step C] 写入交易记录: ${transaction.category} ${transaction.type === 'income' ? '+' : '-'}${transaction.amount}`);
+      }
+
+      // 保存本次回合的收支数据到 state
+      state.lastIncome = ledger.totalIncome;
+      state.lastExpense = ledger.totalExpense;
+
+      // 保存游戏状态快照
+      await insertGameSnapshot({
+        id: generateId(),
+        turn: state.turn ?? 1,
+        snapshotJson: JSON.stringify(state),
+        type: 'auto',
+        createdAt: Date.now()
+      });
+
+      // 保存到本地存储
+      saveToLocalStorage();
+
+      logger.info('[Step C] 数据库写入完成');
+
+      // 更新 financeStore
+      try {
+        const gameStoreModule = await import('@/store/gameStore') as any;
+        const gameStore = gameStoreModule.useGameStore.getState();
+        if (gameStore && gameStore.setCurrentLedger) {
+          gameStore.setCurrentLedger(ledger);
+        }
+
+        const financeStoreModule = await import('@/store/financeStore') as any;
+        const financeStore = financeStoreModule.useFinanceStore.getState();
+        if (financeStore) {
+          if (financeStore.updateTreasury) {
+            financeStore.updateTreasury(state.treasury.gold, state.treasury.grain);
+          }
+          if (financeStore.loadFinanceData) {
+            financeStore.loadFinanceData();
+          }
+        }
+      } catch (error) {
+        logger.error('[Step C] 更新 financeStore 失败:', error);
+      }
+
+      // 添加到日志
+      logs.push(`财务结算：净 ${ledger.netChange >= 0 ? '收入' : '支出'} ${Math.abs(ledger.netChange).toFixed(1)} 万两`);
+      logs.push(`国库余额：${state.treasury.gold.toFixed(1)} 万两`);
+
     } catch (error) {
-      logger.error('Phase 3 - Province Update failed:', error);
-      emitGameEvent('error', { phase: 'province', error });
+      logger.error('[Step C] 写入数据库失败:', error);
+      throw error;
     }
 
-    // Phase 4 - 国家状态更新
+    // ==================== Step D: 清空队列，进入下一回合 ====================
+    logger.info('[Step D] 清空队列，准备进入下一回合');
     try {
-      logger.debug('Starting nation stats update phase');
-      state = await this.phase4_NationStatsUpdate(state, logs);
-      logger.debug('Nation stats update phase completed');
+      // 清空变动队列
+      const queueLength = changeQueue.length;
+      changeQueue.clear();
+      logger.info(`[Step D] 变动队列已清空（原长度: ${queueLength}）`);
+
+      // 重置 AccountingSystem（为下一回合做准备）
+      accountingSystem.resetLedger();
+      logger.info('[Step D] AccountingSystem 已重置');
+
+      // 检查并重置朝堂状态
+      try {
+        const courtStore = useCourtStore.getState();
+        if (courtStore) {
+          courtStore.resetCourt();
+          logger.debug('[Step D] 朝堂状态已重置');
+        }
+      } catch (error) {
+        logger.error('[Step D] 重置朝堂状态失败:', error);
+      }
+
+      // 触发回合结束事件
+      emitGameEvent('turn:end', { turn: state.turn, logs });
+
+      logger.info('[Step D] 回合结束处理完成');
+
     } catch (error) {
-      logger.error('Phase 4 - Nation Stats Update failed:', error);
-      emitGameEvent('error', { phase: 'nation', error });
+      logger.error('[Step D] 回合结束处理失败:', error);
+      throw error;
     }
 
-    // Phase 5 - 大臣状态更新
-    try {
-      logger.debug('Starting minister update phase');
-      state = await this.phase5_MinisterUpdate(state, logs);
-      logger.debug('Minister update phase completed');
-    } catch (error) {
-      logger.error('Phase 5 - Minister Update failed:', error);
-      emitGameEvent('error', { phase: 'minister', error });
-    }
-
-    // Phase 6 - 国策研究推进
+    // 国策研究推进
     try {
       logger.debug('Starting policy research phase');
-      // 动态导入并忽略类型检查，避免路径大小写问题
       const policyStoreModule = await import('@/store/policyStore') as any;
       const policyStore = policyStoreModule.usePolicyStore.getState();
       const completedPolicies = policyStore.tickResearch();
 
-      // 将本回合完成的国策效果应用到 gameState
       for (const policyId of completedPolicies) {
         const policy = policyStore.getPolicyById(policyId);
         if (!policy) continue;
-        for (const effect of policy.effects) {
-          state = this.applyEffect(effect, state); // 复用现有的 applyEffect 函数
-        }
-        emitGameEvent('policy:completed', { policyId, policyName: policy.name });
-        // 向回合日志添加记录
-        logs.push(`【国策】${policy.name} 研究完成，效果已生效`);
+        logs.push(`【国策】${policy.name} 研究完成`);
       }
       logger.debug('Policy research phase completed');
     } catch (err) {
       logger.error('Policy research failed', err);
-      emitGameEvent('error', { phase: 'policy', error: err });
     }
 
-    // Phase 7 - 剧本引擎
+    // 剧本引擎
     try {
       logger.debug('Starting scenario engine phase');
       const { scenarioEngine } = await import('@/systems/scenarioEngine');
       state = scenarioEngine.tick(state);
-      emitGameEvent('scenario:updated', { turn: state.turn });
       logger.debug('Scenario engine phase completed');
     } catch (err) {
       logger.error('Scenario engine tick failed', err);
-      emitGameEvent('error', { phase: 'scenario', error: err });
     }
 
-    // Phase 8 - 日期推进
+    // 日期推进
     try {
       logger.debug('Starting date advance phase');
-      state = await this.phase6_DateAdvance(state, logs);
+      state = await this.phase_DateAdvance(state, logs);
       logger.debug('Date advance phase completed');
     } catch (error) {
-      logger.error('Phase 8 - Date Advance failed:', error);
+      logger.error('Date Advance failed:', error);
       emitGameEvent('error', { phase: 'date', error });
     }
 
-    // Phase 9 - 保存快照
+    // 保存快照
     try {
       logger.debug('Starting save snapshot phase');
-      await this.phase7_SaveSnapshot(state, logs);
+      await this.phase_SaveSnapshot(state, logs);
       logger.debug('Save snapshot phase completed');
     } catch (error) {
-      logger.error('Phase 9 - Save Snapshot failed:', error);
+      logger.error('Save Snapshot failed:', error);
       emitGameEvent('error', { phase: 'snapshot', error });
     }
 
-    // Phase 10 - 游戏结束检查
+    // 游戏结束检查
     try {
       logger.debug('Starting game over check phase');
-      state = await this.phase8_GameOverCheck(state, logs);
+      state = await this.phase_GameOverCheck(state, logs);
       logger.debug('Game over check phase completed');
     } catch (error) {
-      logger.error('Phase 10 - Game Over Check failed:', error);
+      logger.error('Game Over Check failed:', error);
       emitGameEvent('error', { phase: 'gameover', error });
     }
 
@@ -148,269 +286,68 @@ export class GameLoop {
     }
     state.turnLog = [...state.turnLog, ...logs];
 
-    // 检查并重置朝堂状态
-    try {
-      const courtStore = useCourtStore.getState();
-      if (courtStore) {
-        courtStore.resetCourt();
-        logger.debug('Court state reset');
-      }
-    } catch (error) {
-      logger.error('Failed to reset court state:', error);
-    }
-
-    emitGameEvent('turn:end', { turn: state.turn, logs });
-
-    logger.info('Game tick completed', { turn: state.turn, date: state.date });
-    return state;
-  }
-
-  private async phase1_Tax(state: GameState, logs: string[]): Promise<GameState> {
-    const taxResults = this.taxSystem.calculateAllProvincesTax(state.provinces, state.nationStats);
-    
-    this.taxSystem.applyTaxEffects(state.provinces, taxResults);
-    
-    const totalIncome = this.taxSystem.getTotalTaxRevenue(taxResults);
-    state.treasury.gold += totalIncome;
-    
-    const report = this.taxSystem.getTaxReport(taxResults);
-    logs.push(`税收阶段：全国税收 ${report.totalIncome.toFixed(1)} 万两`);
-    
-    if (report.topProvince) {
-      logs.push(`税收最高：${report.topProvince.provinceName} (${report.topProvince.actualTax.toFixed(1)}万两)`);
-    }
-    
-    emitGameEvent('tax:calculated', { results: taxResults, total: totalIncome });
-    
-    return state;
-  }
-
-  private async phase2_Expense(state: GameState, logs: string[]): Promise<GameState> {
-    const expenses = this.financeSystem.calculateExpenses(state);
-    
-    this.financeSystem.recordExpenses(expenses);
-    
-    const snapshot = this.financeSystem.updateTreasury(
-      state.treasury.gold - expenses.total + state.treasury.gold,
-      expenses,
-      state.treasury.gold
-    );
-    
-    state.treasury.gold = snapshot.gold;
-    
-    if (state.treasury.gold <= 0) {
-      logs.push(`警告：国库已空虚！`);
-    }
-    
-    logs.push(`支出阶段：总支出 ${expenses.total.toFixed(1)} 万两`);
-    logs.push(`  - 军费: ${expenses.military.toFixed(1)}万两`);
-    logs.push(`  - 俸禄: ${expenses.salary.toFixed(1)}万两`);
-    logs.push(`  - 赈灾: ${expenses.disaster.toFixed(1)}万两`);
-    
-    const health = this.financeSystem.getFinancialHealth(state.treasury.gold, snapshot.income, expenses.total);
-    emitGameEvent('finance:updated', { snapshot, expenses, health });
-    
-    return state;
-  }
-
-  private async phase3_ProvinceUpdate(state: GameState, logs: string[]): Promise<GameState> {
-    const updatedProvinces = state.provinces.map(province => {
-      let civilUnrest = province.civilUnrest;
-      let disasterLevel = province.disasterLevel;
-      
-      civilUnrest = Math.max(0, civilUnrest - 5);
-      
-      if (province.disasterLevel >= 3) {
-        civilUnrest = Math.min(100, civilUnrest + 10);
-      }
-      
-      if (province.taxRate > 0.3) {
-        civilUnrest = Math.min(100, civilUnrest + Math.floor((province.taxRate - 0.3) * 15));
-      }
-      
-      if (province.disasterLevel > 0 && Math.random() < 0.2) {
-        disasterLevel = Math.max(0, disasterLevel - 1);
-      }
-      
-      const corruptionChange = (Math.random() - 0.5) * 5;
-      const corruptionLevel = Math.max(0, Math.min(100, province.corruptionLevel + corruptionChange));
-      
-      updateProvince(province.id, { civilUnrest, disasterLevel, corruptionLevel });
-      
-      return {
-        ...province,
-        civilUnrest,
-        disasterLevel,
-        corruptionLevel: Math.round(corruptionLevel),
-        taxRevenue: province.population * province.taxRate * 0.1
-      };
+    logger.info('========== 回合结算完成 ==========', {
+      turn: state.turn,
+      date: state.date,
+      treasury: state.treasury.gold
     });
-    
-    const highUnrestProvinces = updatedProvinces.filter(p => p.civilUnrest > 70);
-    if (highUnrestProvinces.length > 0) {
-      logs.push(`警报：${highUnrestProvinces.map(p => p.name).join('、')} 民乱告急`);
-    }
-    
-    const highDisasterProvinces = updatedProvinces.filter(p => p.disasterLevel >= 3);
-    if (highDisasterProvinces.length > 0) {
-      logs.push(`天灾：${highDisasterProvinces.map(p => p.name).join('、')} 灾情严重`);
-    }
-    
-    state.provinces = updatedProvinces;
-    emitGameEvent('province:updated', updatedProvinces);
-    
+
     return state;
   }
 
-  private async phase4_NationStatsUpdate(state: GameState, logs: string[]): Promise<GameState> {
-    const { provinces, nationStats } = state;
-    
-    const totalMilitary = provinces.reduce((sum, p) => sum + p.militaryForce, 0);
-    const militaryPower = Math.min(100, Math.round(totalMilitary / 10));
-    
-    const avgUnrest = provinces.reduce((sum, p) => sum + p.civilUnrest, 0) / provinces.length;
-    const peopleMorale = Math.max(0, Math.min(100, Math.round(100 - avgUnrest)));
-    
-    const fluctuation = (Math.random() - 0.5) * 10;
-    let borderThreat = nationStats.borderThreat + fluctuation;
-    
-    if (militaryPower < 30) {
-      borderThreat += 5;
-    }
-    borderThreat = Math.max(0, Math.min(100, borderThreat));
-    
-    const avgCorruption = provinces.reduce((sum, p) => sum + p.corruptionLevel, 0) / provinces.length;
-    const overallCorruption = Math.round(avgCorruption);
-    
-    const avgDisaster = provinces.reduce((sum, p) => sum + p.disasterLevel, 0) / provinces.length;
-    const agriculturalOutput = Math.max(0, Math.min(100, Math.round(100 - avgDisaster * 10)));
-    
-    const newNationStats: NationStats = {
-      militaryPower,
-      peopleMorale,
-      borderThreat: Math.round(borderThreat),
-      overallCorruption,
-      agriculturalOutput
-    };
-    
-    state.nationStats = newNationStats;
-    
-    if (borderThreat > 80) {
-      logs.push(`警报：边患严重，已达 ${Math.round(borderThreat)}%`);
-    }
-    
-    if (peopleMorale < 30) {
-      logs.push(`警报：民心涣散，仅剩 ${peopleMorale}%`);
-    }
-    
-    emitGameEvent('nation:updated', newNationStats);
-    
-    return state;
-  }
-
-  private async phase5_MinisterUpdate(state: GameState, logs: string[]): Promise<GameState> {
-    const updatedMinisters = state.ministers.map(minister => {
-      if (!minister.isAlive) return minister;
-      
-      let loyalty = minister.loyalty;
-      let corruption = minister.corruption;
-      
-      if (corruption > 50) {
-        loyalty = Math.max(0, loyalty - 1);
-      }
-      
-      if (state.nationStats.overallCorruption > 60) {
-        corruption = Math.min(100, corruption + 1);
-      }
-      
-      const loyaltyChange = (Math.random() - 0.5) * 3;
-      loyalty = Math.max(0, Math.min(100, loyalty + loyaltyChange));
-      
-      return {
-        ...minister,
-        loyalty: Math.round(loyalty),
-        corruption: Math.round(corruption)
-      };
-    });
-    
-    const disloyalMinisters = updatedMinisters.filter(m => m.isAlive && m.loyalty < 30);
-    if (disloyalMinisters.length > 0) {
-      logs.push(`警告：${disloyalMinisters.map(m => m.name).join('、')} 忠诚度过低`);
-    }
-    
-    state.ministers = updatedMinisters;
-    emitGameEvent('minister:updated', updatedMinisters);
-    
-    return state;
-  }
-
-  private async phase6_DateAdvance(state: GameState, logs: string[]): Promise<GameState> {
+  private async phase_DateAdvance(state: GameState, logs: string[]): Promise<GameState> {
     let { turn, date, phase } = state;
-    
-    const phases: Array<'morning' | 'afternoon' | 'night'> = ['morning', 'afternoon', 'night'];
-    const currentIndex = phases.indexOf(phase);
-    
-    if (currentIndex < phases.length - 1) {
-      phase = phases[currentIndex + 1];
-    } else {
-      phase = 'morning';
-      turn += 1;
-      
-      const { year, month } = parseGameDate(date);
-      let newMonth = month + 1;
-      let newYear = year;
-      
-      if (newMonth > 12) {
-        newMonth = 1;
-        newYear += 1;
-      }
-      
-      date = formatGameDate(newYear, newMonth);
-    }
-    
-    const phaseName = phase === 'morning' ? '早朝' : phase === 'afternoon' ? '午朝' : '夜议';
+
+    // 直接推进到下一天的早晨，不按早中晚顺序
+    phase = 'morning';
+    turn += 1;
+
+    // 保持月份不变，只增加回合数，天数由StatusBar.tsx根据回合数计算
+    // 这样可以确保日期正确显示为正月初一、正月初二、正月初三...
+
+    const phaseName = '早朝';
     logs.push(`时间推进：${date} · ${phaseName}`);
-    
+
     return { ...state, turn, date, phase };
   }
 
-  private async phase7_SaveSnapshot(state: GameState, logs: string[]): Promise<void> {
+  private async phase_SaveSnapshot(state: GameState, logs: string[]): Promise<void> {
     insertGameSnapshot({
       id: generateId(),
-      turn: state.turn,
+      turn: state.turn ?? 1,
       snapshotJson: JSON.stringify(state),
       type: 'auto',
       createdAt: Date.now()
     });
-    
+
     saveToLocalStorage();
-    logs.push(`存档：第 ${state.turn} 回合快照已保存`);
+    logs.push(`存档：第 ${state.turn ?? 1} 回合快照已保存`);
   }
 
-  private async phase8_GameOverCheck(state: GameState, logs: string[]): Promise<GameState> {
+  private async phase_GameOverCheck(state: GameState, logs: string[]): Promise<GameState> {
     const { treasury, nationStats, provinces } = state;
-    
+
     if (treasury.gold <= 0) {
       state.isGameOver = true;
       state.gameOverReason = '国库空虚，大明财政崩溃';
       logs.push(`游戏结束：${state.gameOverReason}`);
       return state;
     }
-    
+
     if (nationStats.peopleMorale <= 10) {
       state.isGameOver = true;
       state.gameOverReason = '民心尽失，天下大乱';
       logs.push(`游戏结束：${state.gameOverReason}`);
       return state;
     }
-    
+
     if (nationStats.borderThreat >= 100) {
       state.isGameOver = true;
       state.gameOverReason = '边患失控，京师沦陷';
       logs.push(`游戏结束：${state.gameOverReason}`);
       return state;
     }
-    
+
     const highUnrestProvinces = provinces.filter(p => p.civilUnrest >= 90);
     if (highUnrestProvinces.length >= 5) {
       state.isGameOver = true;
@@ -418,60 +355,15 @@ export class GameLoop {
       logs.push(`游戏结束：${state.gameOverReason}`);
       return state;
     }
-    
+
     return state;
   }
 
-  // 应用游戏效果
+  // 应用游戏效果 - 已废弃，所有效果应通过 ChangeQueue 入队
+  // 保留此方法仅用于向后兼容
   private applyEffect(effect: GameEffect, state: GameState): GameState {
-    let newState = { ...state };
-    
-    switch (effect.type) {
-      case 'treasury':
-        if (effect.field === 'gold') {
-          newState.treasury.gold += effect.delta;
-        } else if (effect.field === 'grain') {
-          newState.treasury.grain += effect.delta;
-        }
-        break;
-        
-      case 'province':
-        const province = newState.provinces.find(p => p.id === effect.target);
-        if (province) {
-          const key = effect.field as keyof Province;
-          if (typeof province[key] === 'number') {
-            (province as unknown as Record<string, number>)[key] += effect.delta;
-            updateProvince(effect.target, { [key]: (province as unknown as Record<string, number>)[key] });
-          }
-        }
-        break;
-        
-      case 'minister':
-        const minister = newState.ministers.find(m => m.id === effect.target);
-        if (minister) {
-          const key = effect.field as keyof Minister;
-          if (typeof minister[key] === 'number') {
-            (minister as unknown as Record<string, number>)[key] += effect.delta;
-          }
-        }
-        break;
-        
-      case 'nation':
-        const statsKey = effect.field as keyof NationStats;
-        if (statsKey in newState.nationStats) {
-          newState.nationStats[statsKey] += effect.delta;
-        }
-        break;
-        
-      case 'military':
-        // 处理军事相关效果
-        if (effect.target === 'all') {
-          newState.nationStats.militaryPower += effect.delta;
-        }
-        break;
-    }
-    
-    return newState;
+    logger.warn('[applyEffect] 此方法已废弃，请使用 ChangeQueue.enqueue');
+    return state;
   }
 }
 

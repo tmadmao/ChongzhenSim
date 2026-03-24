@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { Province, Region } from '../core/types';
-import { getAllProvinces, updateProvince, getTopTaxProvinces, getAlertProvinces } from '../db/database';
+import { getAllProvinces, getTopTaxProvinces, getAlertProvinces } from '../db/database';
 
 interface ProvinceStore {
   provinces: Province[];
@@ -39,17 +39,56 @@ export const useProvinceStore = create<ProvinceStore>((set, get) => ({
     set({ selectedProvinceId: id });
   },
 
-  updateProvinceTaxRate: (id, rate) => {
+  updateProvinceTaxRate: async (id, rate) => {
     const clampedRate = Math.max(0, Math.min(0.8, rate));
-    const success = updateProvince(id, { taxRate: clampedRate });
+    const { provinces } = get();
+    const province = provinces.find(p => p.id === id);
     
-    if (success) {
-      const { provinces } = get();
-      const updatedProvinces = provinces.map(p => 
-        p.id === id ? { ...p, taxRate: clampedRate } : p
-      );
-      set({ provinces: updatedProvinces });
+    if (!province) {
+      console.warn('[ProvinceStore] Province not found:', id);
+      return;
     }
+    
+    const oldRate = province.taxRate;
+    
+    // 将税率调整添加到 ChangeQueue，等待回合结算
+    // 不直接修改数据库！
+    const { changeQueue } = await import('../engine/ChangeQueue');
+    
+    changeQueue.enqueue({
+      type: 'province',
+      target: id,
+      field: 'taxRate',
+      newValue: clampedRate, // 使用新值（绝对值模式）
+      description: `${province.name} 税率调整: ${(oldRate * 100).toFixed(0)}% → ${(clampedRate * 100).toFixed(0)}%`,
+      source: '税率调整'
+    });
+    
+    // 计算民乱变化
+    const rateChange = clampedRate - oldRate;
+    let civilUnrestDelta = 0;
+    
+    if (rateChange > 0.1) {
+      civilUnrestDelta = Math.floor(rateChange * 30);
+    } else if (rateChange < -0.1) {
+      civilUnrestDelta = -Math.floor(Math.abs(rateChange) * 15);
+    }
+    
+    if (civilUnrestDelta !== 0) {
+      changeQueue.enqueue({
+        type: 'province',
+        target: id,
+        field: 'civilUnrest',
+        delta: civilUnrestDelta, // 使用变动值（累积模式）
+        description: `${province.name} 民乱变化: ${civilUnrestDelta > 0 ? '+' : ''}${civilUnrestDelta}`,
+        source: '税率调整'
+      });
+    }
+    
+    console.log(`[ProvinceStore] 税率调整已加入队列: ${province.name} ${(oldRate * 100).toFixed(0)}% → ${(clampedRate * 100).toFixed(0)}%`);
+    
+    // 注意：这里不修改 provinces 数组，只记录到队列
+    // 状态将在回合结束时统一更新
   },
 
   getTopTaxProvincesList: (n) => {

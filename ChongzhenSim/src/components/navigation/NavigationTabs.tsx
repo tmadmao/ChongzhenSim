@@ -13,6 +13,7 @@ const navItems: NavItem[] = [
   { key: 'policy', label: '国策树', description: '国策决策树' },
   { key: 'map', label: '坤舆万国全图', description: '天下舆图' },
   { key: 'military', label: '军事', description: '将领与兵力' },
+  { key: 'debug', label: '调试', description: '中央结算系统数据' },
 ];
 
 export function NavigationTabs() {

@@ -60,6 +60,8 @@ export type GameEventType =
   | 'character:exited'
   | 'policy:researching'
   | 'policy:completed'
+  | 'effects:applied'
+  | 'ledger:updated'
   | 'error';
 
 export function emitGameEvent(event: GameEventType, data?: unknown): void {

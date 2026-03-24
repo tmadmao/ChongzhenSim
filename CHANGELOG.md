@@ -1,6 +1,56 @@
 # 更新日志 Changelog
 
 > **声明：本游戏当前版本处于框架构建阶段，尚不可游玩。**
+## [v0.2.1] - 2026-03-24
+
+### 重大更新
+
+#### 统一财务结算体系重构
+- 建立了基于 ChangeQueue 的统一变动队列系统
+- 实现了物理隔离：所有组件必须入队，禁止直接修改数据库
+- 配置驱动：所有数值从 gameConfig.ts 读取
+- 统一结算：所有变动在 endTurn 时统一处理
+- 强制审计：所有变动必须记录日志
+
+### 新增文件
+
+- `src/engine/ChangeQueue.ts` - 统一变动队列，单例模式
+- `src/api/schemas.ts` - 新增 OptionEffectSchema 支持 configKey
+
+### 核心机制
+
+#### ChangeQueue 统一变动队列
+- 单例模式确保唯一入口
+- enqueue() 入队所有变动
+- applyAll() 执行四步结算流水线
+- 支持 Delta 和 Absolute 两种数值变动模式
+- 全面安全检查防止 undefined 错误
+
+#### 四步结算流水线
+- **Step A**: 玩家操作入队（朝堂决策、事件响应）
+- **Step B**: 常规收支计算（税收、俸禄、军饷）
+- **Step C**: 合并所有变动，统一更新状态
+- **Step D**: 清空队列，记录日志
+
+#### 配置驱动开发
+- 新增 EVENT_CONSTANTS 配置块
+- getEventConstant() 辅助函数
+- resolveEffectValue() 解析配置数值
+- OptionEffect 支持 configKey、value、mode 字段
+
+### 重构文件
+
+- `src/components/event/ScenarioEventPanel.tsx` - 改用 ChangeQueue 入队
+- `src/store/courtStore.ts` - 移除 pendingEffects，决策立即入队
+- `src/core/gameLoop.ts` - 严格四步结算流程
+- `src/data/scenario/scriptedEvents.ts` - 更新为新 OptionEffect 格式
+- `src/config/gameConfig.ts` - 新增 EVENT_CONSTANTS 和辅助函数
+
+### 已知问题
+
+- 系统收支数据计算有误，需要进一步重整
+- 已在 commit 信息中标记此已知问题
+
 ## [v0.2.0] - 2026-03-24
 
 ### 重大更新

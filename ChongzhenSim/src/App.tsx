@@ -15,6 +15,7 @@ const ProvinceInfoPanel = lazy(() => import('./components/map/ProvinceInfoPanel'
 const MinisterChatPanel = lazy(() => import('./components/minister').then(module => ({ default: module.MinisterChatPanel })));
 const DecreePanel = lazy(() => import('./components/decree').then(module => ({ default: module.DecreePanel })));
 const SettingsPanel = lazy(() => import('./components/settings/SettingsPanel'));
+const DebugPanel = lazy(() => import('./components/debug').then(module => ({ default: module.DebugPanel })));
 
 // Loading 组件
 const Loading = () => (
