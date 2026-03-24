@@ -1,0 +1,1 @@
+export { MinisterChatPanel } from './MinisterChatPanel';

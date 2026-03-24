@@ -1,0 +1,1 @@
+export { DecreePanel } from './DecreePanel';
