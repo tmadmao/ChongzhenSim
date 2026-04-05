@@ -3,7 +3,9 @@ import { useGameStore } from './store/gameStore';
 import { useProvinceStore } from './store/provinceStore';
 import { useFinanceStore } from './store/financeStore';
 import { useThemeStore, initTheme } from './store/themeStore';
+import { useNavigationStore } from './store/navigationStore';
 import { Layout, BottomBar, StatusBar } from './components/layout';
+import { NavigationTabs } from './components/navigation/NavigationTabs';
 
 // 懒加载组件
 const ProvincePanel = lazy(() => import('./components/province').then(module => ({ default: module.ProvincePanel })));
@@ -16,11 +18,39 @@ const MinisterChatPanel = lazy(() => import('./components/minister').then(module
 const DecreePanel = lazy(() => import('./components/decree').then(module => ({ default: module.DecreePanel })));
 const SettingsPanel = lazy(() => import('./components/settings/SettingsPanel'));
 
+// 懒加载面板组件
+const CourtPanel = lazy(() => import('./components/panels/CourtPanel').then(module => ({ default: module.CourtPanel })));
+const OfficialsPanel = lazy(() => import('./components/panels/OfficialsPanel').then(module => ({ default: module.OfficialsPanel })));
+const PolicyTreePanel = lazy(() => import('./components/panels/PolicyTreePanel').then(module => ({ default: module.PolicyTreePanel })));
+const MilitaryPanel = lazy(() => import('./components/panels/MilitaryPanel').then(module => ({ default: module.MilitaryPanel })));
+
 // Loading 组件
 const Loading = () => (
   <div className="flex items-center justify-center h-full text-palace-text-muted">
     <div className="animate-spin w-8 h-8 border-2 border-palace-gold border-t-transparent rounded-full mr-2"></div>
     <span>加载中...</span>
+  </div>
+);
+
+// 面板加载组件
+const PanelLoading = () => (
+  <div className="h-full flex items-center justify-center text-palace-text-muted p-4">
+    <div className="text-center">
+      <div className="animate-spin w-12 h-12 border-4 border-palace-gold border-t-transparent rounded-full mx-auto mb-4"></div>
+      <p className="text-palace-text">正在加载面板...</p>
+      <p className="text-palace-text-muted text-sm mt-2">请稍候</p>
+    </div>
+  </div>
+);
+
+// 地图加载组件
+const MapLoading = () => (
+  <div className="h-full flex items-center justify-center text-palace-text-muted">
+    <div className="text-center">
+      <div className="animate-spin w-16 h-16 border-4 border-palace-gold border-t-transparent rounded-full mx-auto mb-4"></div>
+      <p className="text-palace-text">正在加载地图...</p>
+      <p className="text-palace-text-muted text-sm mt-2">地图数据较大，请稍候</p>
+    </div>
   </div>
 );
 
@@ -67,6 +97,7 @@ function App() {
   const { loadProvinces } = useProvinceStore();
   const { loadFinanceData } = useFinanceStore();
   const { theme, toggleTheme } = useThemeStore();
+  const { currentView } = useNavigationStore();
 
   useEffect(() => {
     initTheme();
@@ -93,7 +124,7 @@ function App() {
 
         // Step 2: 檢查是否需要加載初始數據
         setInitMessage('正在檢查遊戲數據...');
-        const latestState = getLatestState();
+        const latestState = await getLatestState();
         console.log('[App] Latest state loaded:', {
           provincesCount: latestState.provinces.length,
           treasuryGold: latestState.treasury.gold
@@ -228,7 +259,12 @@ function App() {
   return (
     <>
       <Layout
-        statusBar={<StatusBar />}
+        statusBar={
+          <div className="flex items-center justify-between h-full px-4">
+            <StatusBar />
+            <NavigationTabs />
+          </div>
+        }
         leftPanel={
           <Suspense fallback={<Loading />}>
             <ProvincePanel />
@@ -280,18 +316,39 @@ function App() {
         }
       >
         <div style={{ 
-          display: 'flex', 
           height: 'calc(100vh - 144px)', 
           overflow: 'hidden', 
         }}>
-          <Suspense fallback={<Loading />}>
-            <ProvinceInfoPanel />
-          </Suspense>
-          <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-            <Suspense fallback={<Loading />}>
-              <GameMap />
+          {currentView === 'map' && (
+            <Suspense fallback={<MapLoading />}>
+              <div style={{ display: 'flex', height: '100%' }}>
+                <ProvinceInfoPanel />
+                <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+                  <GameMap />
+                </div>
+              </div>
             </Suspense>
-          </div>
+          )}
+          {currentView === 'court' && (
+            <Suspense fallback={<PanelLoading />}>
+              <CourtPanel />
+            </Suspense>
+          )}
+          {currentView === 'officials' && (
+            <Suspense fallback={<PanelLoading />}>
+              <OfficialsPanel />
+            </Suspense>
+          )}
+          {currentView === 'policy' && (
+            <Suspense fallback={<PanelLoading />}>
+              <PolicyTreePanel />
+            </Suspense>
+          )}
+          {currentView === 'military' && (
+            <Suspense fallback={<PanelLoading />}>
+              <MilitaryPanel />
+            </Suspense>
+          )}
         </div>
       </Layout>
 

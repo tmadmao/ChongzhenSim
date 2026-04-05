@@ -174,6 +174,15 @@ export class GameLoop {
       // 获取 AccountingSystem 的总账
       const ledger = accountingSystem.getLedger();
 
+      // 安全检查：确保 treasury 存在
+      if (!state.treasury) {
+        logger.warn(`[GameEngine] state.treasury is undefined, initializing with default values`);
+        state.treasury = {
+          gold: 0,
+          grain: 0
+        };
+      }
+
       // 注意：Step A 已经通过 changeQueue.applyAll 更新了 state.treasury.gold
       // 这里只需要记录到数据库，不需要再次修改 state
 
@@ -243,8 +252,8 @@ export class GameLoop {
     logger.info('[Step 3] 開始持久化同步');
     try {
       // 從數據庫讀取最新狀態
-      const latestState = getLatestState();
-      const dbProvinces = getAllProvinces();
+      const latestState = await getLatestState();
+      const dbProvinces = await getAllProvinces();
       
       logger.info('[Step 3] 從數據庫讀取最新狀態', {
         dbGold: latestState.treasury.gold,

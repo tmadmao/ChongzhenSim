@@ -11,8 +11,8 @@ interface ProvinceStore {
   loadProvinces: () => void;
   selectProvince: (id: string | null) => void;
   updateProvinceTaxRate: (id: string, rate: number) => void;
-  getTopTaxProvincesList: (n: number) => Province[];
-  getAlertProvincesList: () => Province[];
+  getTopTaxProvincesList: (n: number) => Promise<Province[]>;
+  getAlertProvincesList: () => Promise<Province[]>;
   setFilterRegion: (region: Region | null) => void;
   setSortBy: (field: 'tax' | 'unrest' | 'population' | 'military') => void;
   getFilteredProvinces: () => Province[];
@@ -24,10 +24,10 @@ export const useProvinceStore = create<ProvinceStore>((set, get) => ({
   filterRegion: null,
   sortBy: 'tax',
 
-  loadProvinces: () => {
+  loadProvinces: async () => {
     try {
       console.log('[ProvinceStore] loadProvinces called');
-      const provinces = getAllProvinces();
+      const provinces = await getAllProvinces();
       console.log('[ProvinceStore] loaded provinces:', provinces.length);
       set({ provinces });
     } catch (error) {
@@ -111,12 +111,12 @@ export const useProvinceStore = create<ProvinceStore>((set, get) => ({
     // 状态将在回合结束时统一更新
   },
 
-  getTopTaxProvincesList: (n) => {
-    return getTopTaxProvinces(n);
+  getTopTaxProvincesList: async (n) => {
+    return await getTopTaxProvinces(n);
   },
 
-  getAlertProvincesList: () => {
-    return getAlertProvinces();
+  getAlertProvincesList: async () => {
+    return await getAlertProvinces();
   },
 
   setFilterRegion: (region) => {

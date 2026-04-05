@@ -100,6 +100,64 @@ function OfficialSelectModal({
     return [...candidates].sort((a, b) => b.competence - a.competence);
   }, [candidates]);
 
+  // 候选人行组件
+  const CandidateRow = ({ index, style }: { index: number; style: React.CSSProperties }) => {
+    const minister = sortedCandidates[index];
+    return (
+      <div style={style} className="px-1">
+        <div
+          className={`candidate-card p-3 rounded-lg border cursor-pointer transition-all ${
+            selectedId === minister.id 
+              ? 'border-palace-gold bg-palace-gold/10' 
+              : 'border-palace-border hover:border-palace-gold/50'
+          }`}
+          onClick={() => setSelectedId(minister.id)}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <span className="font-medium">{minister.name}</span>
+              <span className={`palace-badge ${getFactionBadgeClass(minister.faction)}`}>
+                {minister.factionLabel}
+              </span>
+            </div>
+            <span className="text-xs text-palace-text-muted">{minister.title}</span>
+          </div>
+          
+          <div className="grid grid-cols-4 gap-2 text-xs">
+            <div className="text-center">
+              <div className="text-palace-text-muted">忠诚</div>
+              <div className={`font-medium ${minister.loyalty >= 60 ? 'text-success' : minister.loyalty >= 40 ? 'text-warning' : 'text-danger'}`}>
+                {minister.loyalty}
+              </div>
+            </div>
+            <div className="text-center">
+              <div className="text-palace-text-muted">能力</div>
+              <div className="font-medium text-palace-text">{minister.competence}</div>
+            </div>
+            <div className="text-center">
+              <div className="text-palace-text-muted">贪腐</div>
+              <div className={`font-medium ${minister.corruption >= 50 ? 'text-danger' : minister.corruption >= 30 ? 'text-warning' : 'text-success'}`}>
+                {minister.corruption}
+              </div>
+            </div>
+            <div className="text-center">
+              <div className="text-palace-text-muted">关系</div>
+              <div className={`font-medium ${minister.relationship >= 50 ? 'text-success' : minister.relationship >= 30 ? 'text-warning' : 'text-danger'}`}>
+                {minister.relationship}
+              </div>
+            </div>
+          </div>
+
+          {minister.summary && (
+            <div className="text-xs text-palace-text-muted mt-2 line-clamp-1">
+              {minister.summary}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="palace-modal-overlay" onClick={onClose}>
       <div 
@@ -148,61 +206,14 @@ function OfficialSelectModal({
           可选候选人 ({sortedCandidates.length}人)
         </div>
         
-        <div className="candidates-list max-h-80 overflow-y-auto palace-scrollbar space-y-2">
-          {sortedCandidates.map(minister => (
-            <div
-              key={minister.id}
-              className={`candidate-card p-3 rounded-lg border cursor-pointer transition-all ${
-                selectedId === minister.id 
-                  ? 'border-palace-gold bg-palace-gold/10' 
-                  : 'border-palace-border hover:border-palace-gold/50'
-              }`}
-              onClick={() => setSelectedId(minister.id)}
-            >
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">{minister.name}</span>
-                  <span className={`palace-badge ${getFactionBadgeClass(minister.faction)}`}>
-                    {minister.factionLabel}
-                  </span>
-                </div>
-                <span className="text-xs text-palace-text-muted">{minister.title}</span>
-              </div>
-              
-              <div className="grid grid-cols-4 gap-2 text-xs">
-                <div className="text-center">
-                  <div className="text-palace-text-muted">忠诚</div>
-                  <div className={`font-medium ${minister.loyalty >= 60 ? 'text-success' : minister.loyalty >= 40 ? 'text-warning' : 'text-danger'}`}>
-                    {minister.loyalty}
-                  </div>
-                </div>
-                <div className="text-center">
-                  <div className="text-palace-text-muted">能力</div>
-                  <div className="font-medium text-palace-text">{minister.competence}</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-palace-text-muted">贪腐</div>
-                  <div className={`font-medium ${minister.corruption >= 50 ? 'text-danger' : minister.corruption >= 30 ? 'text-warning' : 'text-success'}`}>
-                    {minister.corruption}
-                  </div>
-                </div>
-                <div className="text-center">
-                  <div className="text-palace-text-muted">关系</div>
-                  <div className={`font-medium ${minister.relationship >= 50 ? 'text-success' : minister.relationship >= 30 ? 'text-warning' : 'text-danger'}`}>
-                    {minister.relationship}
-                  </div>
-                </div>
-              </div>
-
-              {minister.summary && (
-                <div className="text-xs text-palace-text-muted mt-2 line-clamp-1">
-                  {minister.summary}
-                </div>
-              )}
+        <div className="candidates-list" style={{ height: 320, overflow: 'auto' }}>
+          {sortedCandidates.length > 0 ? (
+            <div className="palace-scrollbar">
+              {sortedCandidates.map((candidate, index) => (
+                <CandidateRow key={candidate.id} index={index} style={{}} />
+              ))}
             </div>
-          ))}
-          
-          {sortedCandidates.length === 0 && (
+          ) : (
             <div className="text-center py-8 text-palace-text-muted">
               暂无合适候选人
             </div>

@@ -217,8 +217,11 @@ export class ChangeQueue {
   private applyTreasuryChange(state: GameState, change: ChangeRequest, logs: string[]): void {
     // 安全检查：确保 treasury 存在
     if (!state.treasury) {
-      logger.warn(`[ChangeQueue] state.treasury is undefined`);
-      return;
+      logger.warn(`[ChangeQueue] state.treasury is undefined, initializing with default values`);
+      state.treasury = {
+        gold: 0,
+        grain: 0
+      };
     }
 
     // 統一架構：優先使用 field 屬性，向後兼容 target 屬性
@@ -272,7 +275,7 @@ export class ChangeQueue {
     
     // 統一架構：將可能的數據庫字段名轉換為 TypeScript 字段名
     const tsField = toTsField(change.field);
-    const provinceRecord = province as NumericRecord;
+    const provinceRecord = province as unknown as NumericRecord;
     const oldValue = provinceRecord[tsField] ?? 0;
 
     if (change.newValue !== undefined) {
@@ -309,7 +312,7 @@ export class ChangeQueue {
     const delta = change.delta || 0;
 
     for (const minister of affectedMinisters) {
-      const ministerRecord = minister as NumericRecord;
+      const ministerRecord = minister as unknown as NumericRecord;
       const oldValue = ministerRecord[field] ?? 0;
       const newValue = isAbsolute
         ? Math.max(0, Math.min(100, change.newValue || 0))
@@ -329,7 +332,7 @@ export class ChangeQueue {
       return;
     }
 
-    const nationRecord = state.nationStats as NumericRecord;
+    const nationRecord = state.nationStats as unknown as NumericRecord;
     const oldValue = nationRecord[change.field] ?? 0;
     const newValue = Math.max(0, Math.min(100, oldValue + (change.delta || 0)));
     nationRecord[change.field] = newValue;
@@ -352,7 +355,7 @@ export class ChangeQueue {
       return;
     }
 
-    const ministerRecord = minister as NumericRecord;
+    const ministerRecord = minister as unknown as NumericRecord;
     const oldValue = ministerRecord[change.field] ?? 0;
     const newValue = Math.max(0, Math.min(100, oldValue + (change.delta || 0)));
     ministerRecord[change.field] = newValue;

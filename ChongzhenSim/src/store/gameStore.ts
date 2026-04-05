@@ -488,7 +488,7 @@ export const useGameStore = create<GameStore>()(
         try {
           await initDatabase();
           
-          const provinces = getAllProvinces();
+          const provinces = await getAllProvinces();
           
           if (provinces.length === 0) {
             set({ isLoading: false });

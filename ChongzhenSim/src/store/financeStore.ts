@@ -8,9 +8,9 @@ interface FinanceStore {
   chartData: ChartData[];
   financialHealth: FinancialHealth;
   
-  loadFinanceData: () => void;
-  refreshChartData: (turns: number) => void;
-  getExpenseSummary: (turn: number) => ReturnType<typeof getIncomeExpenseSummary>;
+  loadFinanceData: () => Promise<void>;
+  refreshChartData: (turns: number) => Promise<void>;
+  getExpenseSummary: (turn: number) => Promise<ReturnType<typeof getIncomeExpenseSummary>>;
   updateTreasury: (gold: number, grain: number) => void;
   calculateFinancialHealth: (gold: number, income: number, expense: number) => FinancialHealth;
 }
@@ -27,10 +27,10 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
   chartData: [],
   financialHealth: 'balanced',
 
-  loadFinanceData: () => {
+  loadFinanceData: async () => {
     try {
-      const transactions = getRecentTransactions(50);
-      const totalGold = getTotalGold();
+      const transactions = await getRecentTransactions(50);
+      const totalGold = await getTotalGold();
       
       set({
         recentTransactions: transactions,
@@ -41,24 +41,24 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
         }
       });
       
-      get().refreshChartData(20);
+      await get().refreshChartData(20);
       
     } catch (error) {
       console.error('[FinanceStore] loadFinanceData failed:', error);
     }
   },
 
-  refreshChartData: (turns) => {
+  refreshChartData: async (turns) => {
     try {
-      const chartData = getTreasuryHistory(turns);
+      const chartData = await getTreasuryHistory(turns);
       set({ chartData });
     } catch (error) {
       console.error('[FinanceStore] refreshChartData failed:', error);
     }
   },
 
-  getExpenseSummary: (turn) => {
-    return getIncomeExpenseSummary(turn);
+  getExpenseSummary: async (turn) => {
+    return await getIncomeExpenseSummary(turn);
   },
 
   updateTreasury: (gold, grain) => {

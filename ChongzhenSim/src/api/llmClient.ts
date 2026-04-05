@@ -39,6 +39,8 @@ export class LLMClient {
   private provider: ReturnType<typeof createOpenAI>;
   private modelName: string;
   private useServerProxy: boolean;
+  private cache: Map<string, { response: AIEventResponse; timestamp: number }> = new Map();
+  private readonly CACHE_TTL = 5 * 60 * 1000; // 5分钟缓存
 
   constructor() {
     this.provider = createOpenAI({ compatibility: 'strict' });
@@ -85,8 +87,35 @@ export class LLMClient {
     return this.useServerProxy;
   }
 
+  private generateCacheKey(context: EventContext): string {
+    const { currentDay, playerDecision } = context;
+    const key = `${currentDay}-${playerDecision?.type || 'none'}-${playerDecision?.optionId || 'none'}`;
+    return key;
+  }
+
+  private isCacheValid(timestamp: number): boolean {
+    return Date.now() - timestamp < this.CACHE_TTL;
+  }
+
   async generateEvent(context: EventContext): Promise<AIEventResponse> {
     try {
+      // 检查是否为本地模式
+      const settings = getSettings();
+      if (settings.gameMode === 'local') {
+        logger.info('Local mode: using fallback event');
+        return FALLBACK_EVENT;
+      }
+
+      // 生成缓存键
+      const cacheKey = this.generateCacheKey(context);
+      
+      // 检查缓存
+      const cached = this.cache.get(cacheKey);
+      if (cached && this.isCacheValid(cached.timestamp)) {
+        logger.info('Using cached event response');
+        return cached.response;
+      }
+
       logger.info('Requesting LLM for event generation...');
       const provider = this.getUpdatedProvider();
       const modelName = this.getUpdatedModelName();
@@ -96,6 +125,12 @@ export class LLMClient {
         system: SYSTEM_PROMPT,
         prompt: buildUserPrompt(context),
         maxRetries: 2,
+      });
+      
+      // 缓存结果
+      this.cache.set(cacheKey, {
+        response: object,
+        timestamp: Date.now()
       });
       
       logger.info('LLM event generation successful', { mood: object.mood });

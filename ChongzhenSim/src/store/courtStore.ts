@@ -124,6 +124,9 @@ export const useCourtStore = create<CourtStore>((set, get) => ({
     }
 
     // 立即将效果提交到 ChangeQueue（不再等待退朝）
+    const { useGameStore } = await import('./gameStore')
+    const gameStore = useGameStore.getState()
+    
     if (allEffects.length > 0) {
       const { changeQueue } = await import('../engine/ChangeQueue')
       const { resolveEffectValue } = await import('../config/gameConfig')
@@ -168,8 +171,7 @@ export const useCourtStore = create<CourtStore>((set, get) => ({
           changeType = ChangeType.NATION
         } else if (effect.type === 'minister') {
           // minister 可能是针对某个官员，也可能是针对派系支持度
-          const { useGameStore } = await import('./gameStore')
-          const gameState = useGameStore.getState().gameState
+          const gameState = gameStore.gameState
           const hasMinisterId = gameState?.ministers?.some(m => m.id === effect.target)
           changeType = hasMinisterId ? ChangeType.OFFICIAL : ChangeType.FACTION
         } else if (effect.type === 'faction') {
@@ -190,8 +192,6 @@ export const useCourtStore = create<CourtStore>((set, get) => ({
         })
 
         if (effect.type === 'province' && effect.field === 'taxRate') {
-          const { useGameStore } = await import('./gameStore')
-          const gameStore = useGameStore.getState()
           const currentState = gameStore.gameState
           if (currentState?.taxRateHistory && currentState.provinces) {
             const province = currentState.provinces.find(p => p.id === effect.target)
@@ -217,9 +217,6 @@ export const useCourtStore = create<CourtStore>((set, get) => ({
       }
 
       console.log(`[CourtStore] 已提交 ${allEffects.length} 个效果到 ChangeQueue`)
-
-      const { useGameStore } = await import('./gameStore')
-      const gameStore = useGameStore.getState()
 
       // 处理事件之间的锁定与解锁关系
       if (choice.unlocksEventIds?.length || choice.locksEventIds?.length) {

@@ -1,4 +1,5 @@
 import type { Province, TreasuryTransaction, GameSnapshot, MinisterLog } from '../core/types';
+import { gameStateCache } from '../utils/cache';
 
 type SqlJsDatabase = {
   run: (sql: string, params?: unknown[]) => void;
@@ -137,8 +138,24 @@ function createTables(database: SqlJsDatabase): void {
     )
   `);
 
+  // 省份表索引
+  database.run(`CREATE INDEX IF NOT EXISTS idx_provinces_id ON provinces(id)`);
+  database.run(`CREATE INDEX IF NOT EXISTS idx_provinces_region ON provinces(region)`);
+  database.run(`CREATE INDEX IF NOT EXISTS idx_provinces_tax_revenue ON provinces(tax_revenue)`);
+  database.run(`CREATE INDEX IF NOT EXISTS idx_provinces_civil_unrest ON provinces(civil_unrest)`);
+  database.run(`CREATE INDEX IF NOT EXISTS idx_provinces_disaster_level ON provinces(disaster_level)`);
+  
+  // 交易表索引
   database.run(`CREATE INDEX IF NOT EXISTS idx_transactions_turn ON treasury_transactions(turn)`);
+  database.run(`CREATE INDEX IF NOT EXISTS idx_transactions_created_at ON treasury_transactions(created_at)`);
+  database.run(`CREATE INDEX IF NOT EXISTS idx_transactions_asset_type ON treasury_transactions(asset_type)`);
+  
+  // 游戏快照表索引
   database.run(`CREATE INDEX IF NOT EXISTS idx_snapshots_turn ON game_snapshots(turn)`);
+  
+  // 大臣日志表索引
+  database.run(`CREATE INDEX IF NOT EXISTS idx_minister_logs_turn ON minister_logs(turn)`);
+  database.run(`CREATE INDEX IF NOT EXISTS idx_minister_logs_minister_id ON minister_logs(minister_id)`);
 }
 
 function getDB(): SqlJsDatabase {
@@ -194,25 +211,27 @@ export function insertProvinces(provinces: Province[]): void {
   }
 }
 
-export function getAllProvinces(): Province[] {
+export async function getAllProvinces(): Promise<Province[]> {
   try {
-    const results = getDB().exec('SELECT * FROM provinces ORDER BY name');
-    console.log('[Database] getAllProvinces query result:', results.length > 0 ? results[0].values.length : 0, 'rows');
-    if (results.length === 0) return [];
-    return results[0].values.map(row => ({
-      id: row[0] as string,
-      name: row[1] as string,
-      population: row[2] as number,
-      taxRate: row[3] as number,
-      taxRevenue: row[4] as number,
-      granaryStock: row[5] as number,
-      civilUnrest: row[6] as number,
-      militaryForce: row[7] as number,
-      disasterLevel: row[8] as number,
-      corruptionLevel: row[9] as number,
-      coordinates: { lat: row[10] as number, lng: row[11] as number },
-      region: row[12] as 'north' | 'south' | 'east' | 'west' | 'central' | 'border'
-    }));
+    return await gameStateCache.get('all_provinces', async () => {
+      const results = getDB().exec('SELECT * FROM provinces ORDER BY name');
+      console.log('[Database] getAllProvinces query result:', results.length > 0 ? results[0].values.length : 0, 'rows');
+      if (results.length === 0) return [];
+      return results[0].values.map(row => ({
+        id: row[0] as string,
+        name: row[1] as string,
+        population: row[2] as number,
+        taxRate: row[3] as number,
+        taxRevenue: row[4] as number,
+        granaryStock: row[5] as number,
+        civilUnrest: row[6] as number,
+        militaryForce: row[7] as number,
+        disasterLevel: row[8] as number,
+        corruptionLevel: row[9] as number,
+        coordinates: { lat: row[10] as number, lng: row[11] as number },
+        region: row[12] as 'north' | 'south' | 'east' | 'west' | 'central' | 'border'
+      }));
+    });
   } catch (error) {
     console.error('[Database] getAllProvinces failed:', error);
     return [];
@@ -278,50 +297,54 @@ export function updateProvince(id: string, fields: Partial<Province>): boolean {
   }
 }
 
-export function getTopTaxProvinces(limit: number): Province[] {
+export async function getTopTaxProvinces(limit: number): Promise<Province[]> {
   try {
-    const results = getDB().exec('SELECT * FROM provinces ORDER BY tax_revenue DESC LIMIT ?', [limit]);
-    if (results.length === 0) return [];
-    return results[0].values.map(row => ({
-      id: row[0] as string,
-      name: row[1] as string,
-      population: row[2] as number,
-      taxRate: row[3] as number,
-      taxRevenue: row[4] as number,
-      granaryStock: row[5] as number,
-      civilUnrest: row[6] as number,
-      militaryForce: row[7] as number,
-      disasterLevel: row[8] as number,
-      corruptionLevel: row[9] as number,
-      coordinates: { lat: row[10] as number, lng: row[11] as number },
-      region: row[12] as 'north' | 'south' | 'east' | 'west' | 'central' | 'border'
-    }));
+    return await gameStateCache.get(`top_tax_provinces_${limit}`, async () => {
+      const results = getDB().exec('SELECT * FROM provinces ORDER BY tax_revenue DESC LIMIT ?', [limit]);
+      if (results.length === 0) return [];
+      return results[0].values.map(row => ({
+        id: row[0] as string,
+        name: row[1] as string,
+        population: row[2] as number,
+        taxRate: row[3] as number,
+        taxRevenue: row[4] as number,
+        granaryStock: row[5] as number,
+        civilUnrest: row[6] as number,
+        militaryForce: row[7] as number,
+        disasterLevel: row[8] as number,
+        corruptionLevel: row[9] as number,
+        coordinates: { lat: row[10] as number, lng: row[11] as number },
+        region: row[12] as 'north' | 'south' | 'east' | 'west' | 'central' | 'border'
+      }));
+    });
   } catch (error) {
     console.error('[Database] getTopTaxProvinces failed:', error);
     return [];
   }
 }
 
-export function getAlertProvinces(): Province[] {
+export async function getAlertProvinces(): Promise<Province[]> {
   try {
-    const results = getDB().exec(
-      'SELECT * FROM provinces WHERE civil_unrest > 70 OR disaster_level >= 3 ORDER BY civil_unrest DESC, disaster_level DESC'
-    );
-    if (results.length === 0) return [];
-    return results[0].values.map(row => ({
-      id: row[0] as string,
-      name: row[1] as string,
-      population: row[2] as number,
-      taxRate: row[3] as number,
-      taxRevenue: row[4] as number,
-      granaryStock: row[5] as number,
-      civilUnrest: row[6] as number,
-      militaryForce: row[7] as number,
-      disasterLevel: row[8] as number,
-      corruptionLevel: row[9] as number,
-      coordinates: { lat: row[10] as number, lng: row[11] as number },
-      region: row[12] as 'north' | 'south' | 'east' | 'west' | 'central' | 'border'
-    }));
+    return await gameStateCache.get('alert_provinces', async () => {
+      const results = getDB().exec(
+        'SELECT * FROM provinces WHERE civil_unrest > 70 OR disaster_level >= 3 ORDER BY civil_unrest DESC, disaster_level DESC'
+      );
+      if (results.length === 0) return [];
+      return results[0].values.map(row => ({
+        id: row[0] as string,
+        name: row[1] as string,
+        population: row[2] as number,
+        taxRate: row[3] as number,
+        taxRevenue: row[4] as number,
+        granaryStock: row[5] as number,
+        civilUnrest: row[6] as number,
+        militaryForce: row[7] as number,
+        disasterLevel: row[8] as number,
+        corruptionLevel: row[9] as number,
+        coordinates: { lat: row[10] as number, lng: row[11] as number },
+        region: row[12] as 'north' | 'south' | 'east' | 'west' | 'central' | 'border'
+      }));
+    });
   } catch (error) {
     console.error('[Database] getAlertProvinces failed:', error);
     return [];
@@ -339,111 +362,143 @@ export function insertTransaction(transaction: TreasuryTransaction): void {
   );
 }
 
-export function getTransactionsByTurn(turn: number): TreasuryTransaction[] {
+export function insertTransactions(transactions: TreasuryTransaction[]): void {
+  const database = getDB();
+  database.run('BEGIN TRANSACTION');
   try {
-    const results = getDB().exec(
-      'SELECT * FROM treasury_transactions WHERE turn = ? ORDER BY created_at',
-      [turn]
-    );
-    if (results.length === 0) return [];
-    return results[0].values.map(row => ({
-      id: row[0] as string,
-      turn: row[1] as number,
-      date: row[2] as string,
-      type: row[3] as 'income' | 'expense',
-      assetType: row[4] as 'gold' | 'grain',
-      category: row[5] as string,
-      amount: row[6] as number,
-      provinceId: row[7] as string | undefined,
-      description: row[8] as string,
-      createdAt: row[9] as number
-    }));
+    transactions.forEach(transaction => {
+      database.run(
+        `INSERT INTO treasury_transactions 
+         (id, turn, game_date, type, asset_type, category, amount, province_id, description, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [transaction.id, transaction.turn, transaction.date, transaction.type,
+         transaction.assetType || 'gold', transaction.category, transaction.amount,
+         transaction.provinceId || null, transaction.description, transaction.createdAt]
+      );
+    });
+    database.run('COMMIT');
+  } catch (error) {
+    database.run('ROLLBACK');
+    console.error('[Database] insertTransactions failed:', error);
+    throw error;
+  }
+}
+
+export async function getTransactionsByTurn(turn: number): Promise<TreasuryTransaction[]> {
+  try {
+    return await gameStateCache.get(`transactions_by_turn_${turn}`, async () => {
+      const results = getDB().exec(
+        'SELECT * FROM treasury_transactions WHERE turn = ? ORDER BY created_at',
+        [turn]
+      );
+      if (results.length === 0) return [];
+      return results[0].values.map(row => ({
+        id: row[0] as string,
+        turn: row[1] as number,
+        date: row[2] as string,
+        type: row[3] as 'income' | 'expense',
+        assetType: row[4] as 'gold' | 'grain',
+        category: row[5] as string,
+        amount: row[6] as number,
+        provinceId: row[7] as string | undefined,
+        description: row[8] as string,
+        createdAt: row[9] as number
+      }));
+    });
   } catch (error) {
     console.error('[Database] getTransactionsByTurn failed:', error);
     return [];
   }
 }
 
-export function getRecentTransactions(limit: number): TreasuryTransaction[] {
+export async function getRecentTransactions(limit: number): Promise<TreasuryTransaction[]> {
   try {
-    const results = getDB().exec(
-      'SELECT * FROM treasury_transactions ORDER BY created_at DESC LIMIT ?',
-      [limit]
-    );
-    if (results.length === 0) return [];
-    return results[0].values.map(row => ({
-      id: row[0] as string,
-      turn: row[1] as number,
-      date: row[2] as string,
-      type: row[3] as 'income' | 'expense',
-      assetType: row[4] as 'gold' | 'grain',
-      category: row[5] as string,
-      amount: row[6] as number,
-      provinceId: row[7] as string | undefined,
-      description: row[8] as string,
-      createdAt: row[9] as number
-    }));
+    return await gameStateCache.get(`recent_transactions_${limit}`, async () => {
+      const results = getDB().exec(
+        'SELECT * FROM treasury_transactions ORDER BY created_at DESC LIMIT ?',
+        [limit]
+      );
+      if (results.length === 0) return [];
+      return results[0].values.map(row => ({
+        id: row[0] as string,
+        turn: row[1] as number,
+        date: row[2] as string,
+        type: row[3] as 'income' | 'expense',
+        assetType: row[4] as 'gold' | 'grain',
+        category: row[5] as string,
+        amount: row[6] as number,
+        provinceId: row[7] as string | undefined,
+        description: row[8] as string,
+        createdAt: row[9] as number
+      }));
+    });
   } catch (error) {
     console.error('[Database] getRecentTransactions failed:', error);
     return [];
   }
 }
 
-export function getTotalGold(): number {
+export async function getTotalGold(): Promise<number> {
   try {
-    const incomeResult = getDB().exec("SELECT SUM(amount) FROM treasury_transactions WHERE type = 'income' AND asset_type = 'gold'");
-    const expenseResult = getDB().exec("SELECT SUM(amount) FROM treasury_transactions WHERE type = 'expense' AND asset_type = 'gold'");
-    const income = (incomeResult[0]?.values[0]?.[0] as number) || 0;
-    const expense = (expenseResult[0]?.values[0]?.[0] as number) || 0;
-    return income - expense;
+    return await gameStateCache.get('total_gold', async () => {
+      const incomeResult = getDB().exec("SELECT SUM(amount) FROM treasury_transactions WHERE type = 'income' AND asset_type = 'gold'");
+      const expenseResult = getDB().exec("SELECT SUM(amount) FROM treasury_transactions WHERE type = 'expense' AND asset_type = 'gold'");
+      const income = (incomeResult[0]?.values[0]?.[0] as number) || 0;
+      const expense = (expenseResult[0]?.values[0]?.[0] as number) || 0;
+      return income - expense;
+    });
   } catch (error) {
     console.error('[Database] getTotalGold failed:', error);
     return 0;
   }
 }
 
-export function getTotalGrain(): number {
+export async function getTotalGrain(): Promise<number> {
   try {
-    const incomeResult = getDB().exec("SELECT SUM(amount) FROM treasury_transactions WHERE type = 'income' AND asset_type = 'grain'");
-    const expenseResult = getDB().exec("SELECT SUM(amount) FROM treasury_transactions WHERE type = 'expense' AND asset_type = 'grain'");
-    const income = (incomeResult[0]?.values[0]?.[0] as number) || 0;
-    const expense = (expenseResult[0]?.values[0]?.[0] as number) || 0;
-    return income - expense;
+    return await gameStateCache.get('total_grain', async () => {
+      const incomeResult = getDB().exec("SELECT SUM(amount) FROM treasury_transactions WHERE type = 'income' AND asset_type = 'grain'");
+      const expenseResult = getDB().exec("SELECT SUM(amount) FROM treasury_transactions WHERE type = 'expense' AND asset_type = 'grain'");
+      const income = (incomeResult[0]?.values[0]?.[0] as number) || 0;
+      const expense = (expenseResult[0]?.values[0]?.[0] as number) || 0;
+      return income - expense;
+    });
   } catch (error) {
     console.error('[Database] getTotalGrain failed:', error);
     return 0;
   }
 }
 
-export function getTreasuryHistory(turns: number): { turn: number; date: string; income: number; expense: number; balance: number }[] {
+export async function getTreasuryHistory(turns: number): Promise<{ turn: number; date: string; income: number; expense: number; balance: number }[]> {
   try {
-    const results = getDB().exec(
-      `SELECT turn, game_date, 
-              SUM(CASE WHEN type = 'income' AND asset_type = 'gold' THEN amount ELSE 0 END) as income,
-              SUM(CASE WHEN type = 'expense' AND asset_type = 'gold' THEN amount ELSE 0 END) as expense
-       FROM treasury_transactions 
-       GROUP BY turn 
-       ORDER BY turn DESC 
-       LIMIT ?`,
-      [turns]
-    );
-    
-    if (results.length === 0) return [];
-    
-    const data = results[0].values.map(row => ({
-      turn: row[0] as number,
-      date: row[1] as string,
-      income: row[2] as number,
-      expense: row[3] as number,
-      balance: 0
-    }));
-    
-    data.reverse();
-    
-    let runningBalance = 0;
-    return data.map(d => {
-      runningBalance += d.income - d.expense;
-      return { ...d, balance: runningBalance };
+    return await gameStateCache.get(`treasury_history_${turns}`, async () => {
+      const results = getDB().exec(
+        `SELECT turn, game_date, 
+                SUM(CASE WHEN type = 'income' AND asset_type = 'gold' THEN amount ELSE 0 END) as income,
+                SUM(CASE WHEN type = 'expense' AND asset_type = 'gold' THEN amount ELSE 0 END) as expense
+         FROM treasury_transactions 
+         GROUP BY turn 
+         ORDER BY turn DESC 
+         LIMIT ?`,
+        [turns]
+      );
+      
+      if (results.length === 0) return [];
+      
+      const data = results[0].values.map(row => ({
+        turn: row[0] as number,
+        date: row[1] as string,
+        income: row[2] as number,
+        expense: row[3] as number,
+        balance: 0
+      }));
+      
+      data.reverse();
+      
+      let runningBalance = 0;
+      return data.map(d => {
+        runningBalance += d.income - d.expense;
+        return { ...d, balance: runningBalance };
+      });
     });
   } catch (error) {
     console.error('[Database] getTreasuryHistory failed:', error);
@@ -451,34 +506,46 @@ export function getTreasuryHistory(turns: number): { turn: number; date: string;
   }
 }
 
-export function getIncomeExpenseSummary(turn: number): { totalIncome: number; totalExpense: number; balance: number; byCategory: Record<string, number> } {
-  const transactions = getTransactionsByTurn(turn);
-  const summary = {
-    totalIncome: 0,
-    totalExpense: 0,
-    balance: 0,
-    byCategory: {} as Record<string, number>
-  };
-  
-  transactions.forEach(t => {
-    if (t.assetType && t.assetType !== 'gold') {
-      return;
-    }
+export async function getIncomeExpenseSummary(turn: number): Promise<{ totalIncome: number; totalExpense: number; balance: number; byCategory: Record<string, number> }> {
+  try {
+    return await gameStateCache.get(`income_expense_summary_${turn}`, async () => {
+      const transactions = await getTransactionsByTurn(turn);
+      const summary = {
+        totalIncome: 0,
+        totalExpense: 0,
+        balance: 0,
+        byCategory: {} as Record<string, number>
+      };
+      
+      transactions.forEach(t => {
+        if (t.assetType && t.assetType !== 'gold') {
+          return;
+        }
 
-    if (t.type === 'income') {
-      summary.totalIncome += t.amount;
-    } else {
-      summary.totalExpense += t.amount;
-    }
-    
-    if (!summary.byCategory[t.category]) {
-      summary.byCategory[t.category] = 0;
-    }
-    summary.byCategory[t.category] += t.amount;
-  });
-  
-  summary.balance = summary.totalIncome - summary.totalExpense;
-  return summary;
+        if (t.type === 'income') {
+          summary.totalIncome += t.amount;
+        } else {
+          summary.totalExpense += t.amount;
+        }
+        
+        if (!summary.byCategory[t.category]) {
+          summary.byCategory[t.category] = 0;
+        }
+        summary.byCategory[t.category] += t.amount;
+      });
+      
+      summary.balance = summary.totalIncome - summary.totalExpense;
+      return summary;
+    });
+  } catch (error) {
+    console.error('[Database] getIncomeExpenseSummary failed:', error);
+    return {
+      totalIncome: 0,
+      totalExpense: 0,
+      balance: 0,
+      byCategory: {}
+    };
+  }
 }
 
 export function insertGameSnapshot(snapshot: GameSnapshot): void {
@@ -517,21 +584,62 @@ export interface LatestState {
  * 獲取數據庫中的最新狀態
  * 這是統一架構的核心方法，用於從數據庫同步到 Zustand Store
  */
-export function getLatestState(): LatestState {
+export async function getLatestState(): Promise<LatestState> {
   try {
-    const provinces = getAllProvinces();
-    const gold = getTotalGold();
-    const grain = getTotalGrain();
-    const transactions = getRecentTransactions(50);
-    
-    return {
-      provinces,
-      treasury: {
-        gold,
-        grain
-      },
-      transactions
-    };
+    return await gameStateCache.get('latest_state', async () => {
+      // 批量获取所有数据，减少数据库访问次数
+      const database = getDB();
+      
+      // 1. 获取所有省份
+      const provincesResult = database.exec('SELECT * FROM provinces ORDER BY name');
+      const provinces = provincesResult.length > 0 ? provincesResult[0].values.map(row => ({
+        id: row[0] as string,
+        name: row[1] as string,
+        population: row[2] as number,
+        taxRate: row[3] as number,
+        taxRevenue: row[4] as number,
+        granaryStock: row[5] as number,
+        civilUnrest: row[6] as number,
+        militaryForce: row[7] as number,
+        disasterLevel: row[8] as number,
+        corruptionLevel: row[9] as number,
+        coordinates: { lat: row[10] as number, lng: row[11] as number },
+        region: row[12] as 'north' | 'south' | 'east' | 'west' | 'central' | 'border'
+      })) : [];
+      
+      // 2. 获取国库数据（黄金和粮食）
+      const goldIncomeResult = database.exec("SELECT SUM(amount) FROM treasury_transactions WHERE type = 'income' AND asset_type = 'gold'");
+      const goldExpenseResult = database.exec("SELECT SUM(amount) FROM treasury_transactions WHERE type = 'expense' AND asset_type = 'gold'");
+      const grainIncomeResult = database.exec("SELECT SUM(amount) FROM treasury_transactions WHERE type = 'income' AND asset_type = 'grain'");
+      const grainExpenseResult = database.exec("SELECT SUM(amount) FROM treasury_transactions WHERE type = 'expense' AND asset_type = 'grain'");
+      
+      const gold = ((goldIncomeResult[0]?.values[0]?.[0] as number) || 0) - ((goldExpenseResult[0]?.values[0]?.[0] as number) || 0);
+      const grain = ((grainIncomeResult[0]?.values[0]?.[0] as number) || 0) - ((grainExpenseResult[0]?.values[0]?.[0] as number) || 0);
+      
+      // 3. 获取最近的交易
+      const transactionsResult = database.exec('SELECT * FROM treasury_transactions ORDER BY created_at DESC LIMIT 50');
+      const transactions = transactionsResult.length > 0 ? transactionsResult[0].values.map(row => ({
+        id: row[0] as string,
+        turn: row[1] as number,
+        date: row[2] as string,
+        type: row[3] as 'income' | 'expense',
+        assetType: row[4] as 'gold' | 'grain',
+        category: row[5] as string,
+        amount: row[6] as number,
+        provinceId: row[7] as string | undefined,
+        description: row[8] as string,
+        createdAt: row[9] as number
+      })) : [];
+      
+      return {
+        provinces,
+        treasury: {
+          gold,
+          grain
+        },
+        transactions
+      };
+    });
   } catch (error) {
     console.error('[Database] getLatestState failed:', error);
     return {

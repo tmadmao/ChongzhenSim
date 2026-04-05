@@ -86,18 +86,27 @@ export function PolicyTreePanel() {
         </div>
 
         {/* 右侧国策列表 */}
-        <div className="flex-1 overflow-y-auto p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 align-content-start palace-scrollbar">
-          {currentPolicies.map(policy => (
-            <PolicyCard
-              key={policy.id}
-              policy={policy}
-              gameState={gameState}
-              canResearch={gameState ? canStartResearch(policy.id, gameState) : { canResearch: false, reason: '游戏未初始化' }}
-              onStartResearch={() => handleStartResearch(policy.id)}
-              onCancelResearch={() => handleCancelResearch(policy.id)}
-              onJumpToPrereq={(prereqId) => handleJumpToPrereq(prereqId)}
-            />
-          ))}
+        <div className="flex-1 overflow-auto">
+          {currentPolicies.length > 0 ? (
+            <div className="grid grid-cols-3 gap-4 palace-scrollbar p-4">
+              {currentPolicies.map((policy) => (
+                <div key={policy.id}>
+                  <PolicyCard
+                    policy={policy}
+                    gameState={gameState}
+                    canResearch={gameState ? canStartResearch(policy.id, gameState) : { canResearch: false, reason: '游戏未初始化' }}
+                    onStartResearch={() => handleStartResearch(policy.id)}
+                    onCancelResearch={() => handleCancelResearch(policy.id)}
+                    onJumpToPrereq={(prereqId) => handleJumpToPrereq(prereqId)}
+                  />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="flex items-center justify-center h-full text-palace-text-muted">
+              该分类下暂无国策
+            </div>
+          )}
         </div>
       </div>
     </div>
