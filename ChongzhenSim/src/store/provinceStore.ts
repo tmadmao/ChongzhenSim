@@ -63,6 +63,26 @@ export const useProvinceStore = create<ProvinceStore>((set, get) => ({
       description: `${province.name} 税率调整: ${(oldRate * 100).toFixed(0)}% → ${(clampedRate * 100).toFixed(0)}%`,
       source: '税率调整'
     });
+
+    // 记录税率调整历史，方便结算时回溯
+    try {
+      const { useGameStore } = await import('./gameStore');
+      const gameStore = useGameStore.getState();
+      const gameState = gameStore.gameState;
+      if (gameState && gameStore.recordTaxRateHistoryEntry) {
+        gameStore.recordTaxRateHistoryEntry({
+          turn: gameState.turn,
+          date: gameState.date,
+          provinceId: province.id,
+          provinceName: province.name,
+          oldRate,
+          newRate: clampedRate,
+          description: `${province.name} 省税率调整`
+        });
+      }
+    } catch (error) {
+      console.warn('[ProvinceStore] Failed to record tax rate history:', error);
+    }
     
     // 计算民乱变化
     const rateChange = clampedRate - oldRate;

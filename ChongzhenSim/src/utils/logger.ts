@@ -36,7 +36,7 @@ export class Logger {
    * @param message 日志消息
    * @param data 附加数据（可选）
    */
-  info(message: string, data?: any): void {
+  info(message: string, data?: unknown): void {
     console.log(`${this.getLogPrefix('info')} ${message}`, data || '');
   }
 
@@ -45,7 +45,7 @@ export class Logger {
    * @param message 日志消息
    * @param data 附加数据（可选）
    */
-  warn(message: string, data?: any): void {
+  warn(message: string, data?: unknown): void {
     console.warn(`${this.getLogPrefix('warn')} ${message}`, data || '');
   }
 
@@ -54,7 +54,7 @@ export class Logger {
    * @param message 日志消息
    * @param data 附加数据（可选）
    */
-  error(message: string, data?: any): void {
+  error(message: string, data?: unknown): void {
     console.error(`${this.getLogPrefix('error')} ${message}`, data || '');
   }
 
@@ -63,7 +63,7 @@ export class Logger {
    * @param message 日志消息
    * @param data 附加数据（可选）
    */
-  debug(message: string, data?: any): void {
+  debug(message: string, data?: unknown): void {
     if (!this.isProduction) {
       console.debug(`${this.getLogPrefix('debug')} ${message}`, data || '');
     }

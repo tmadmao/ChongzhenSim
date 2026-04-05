@@ -69,6 +69,7 @@ export interface LedgerItem {
   name: string;
   amount: number;
   type: 'income' | 'expense';
+  assetType?: 'gold' | 'grain';
   description: string;
 }
 

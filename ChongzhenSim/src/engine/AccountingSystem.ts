@@ -34,7 +34,10 @@ export class AccountingSystem {
 
     this.ledger.items.push(item);
 
-    if (item.type === 'income') {
+    if (item.assetType && item.assetType !== 'gold') {
+      // 非黄金资产不计入现金总额统计，仅记录交易条目
+      logger.info(`[Finance] Non-gold ledger item recorded: ${item.amount} ${item.assetType} (Source: ${item.name})`);
+    } else if (item.type === 'income') {
       this.ledger.totalIncome += item.amount;
       logger.info(`[Finance] Income added: ${item.amount} (Source: ${item.name})`);
     } else if (item.type === 'expense') {
@@ -45,31 +48,33 @@ export class AccountingSystem {
     this.ledger.netChange = this.ledger.totalIncome - this.ledger.totalExpense;
   }
 
-  addIncome(name: string, amount: number, description: string): void {
+  addIncome(name: string, amount: number, description: string, assetType: 'gold' | 'grain' = 'gold'): void {
     this.addItem({
       name,
       amount,
       type: 'income',
+      assetType,
       description
     });
   }
 
-  addExpense(name: string, amount: number, description: string): void {
+  addExpense(name: string, amount: number, description: string, assetType: 'gold' | 'grain' = 'gold'): void {
     this.addItem({
       name,
       amount,
       type: 'expense',
+      assetType,
       description
     });
   }
 
   calculateTotals(): void {
     this.ledger.totalIncome = this.ledger.items
-      .filter(item => item.type === 'income')
+      .filter(item => item.type === 'income' && (!item.assetType || item.assetType === 'gold'))
       .reduce((sum, item) => sum + item.amount, 0);
 
     this.ledger.totalExpense = this.ledger.items
-      .filter(item => item.type === 'expense')
+      .filter(item => item.type === 'expense' && (!item.assetType || item.assetType === 'gold'))
       .reduce((sum, item) => sum + item.amount, 0);
 
     this.ledger.netChange = this.ledger.totalIncome - this.ledger.totalExpense;
@@ -94,11 +99,11 @@ export class AccountingSystem {
 
     // 检查计算是否正确
     const calculatedIncome = this.ledger.items
-      .filter(item => item.type === 'income')
+      .filter(item => item.type === 'income' && (!item.assetType || item.assetType === 'gold'))
       .reduce((sum, item) => sum + item.amount, 0);
 
     const calculatedExpense = this.ledger.items
-      .filter(item => item.type === 'expense')
+      .filter(item => item.type === 'expense' && (!item.assetType || item.assetType === 'gold'))
       .reduce((sum, item) => sum + item.amount, 0);
 
     const calculatedNetChange = calculatedIncome - calculatedExpense;

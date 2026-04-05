@@ -331,7 +331,7 @@ export function OfficialsPanel() {
     });
     
     return map;
-  }, [gameState?.ministers]);
+  }, [gameState.ministers]);
 
   // 获取候选人列表（排除当前职位的人）
   const getCandidates = (positionTitle: string): Minister[] => {
@@ -368,7 +368,7 @@ export function OfficialsPanel() {
     }, {} as Record<string, number>);
     
     return { total: gameState.ministers.length, alive: alive.length, byFaction };
-  }, [gameState?.ministers]);
+  }, [gameState.ministers]);
 
   // 按类别分组官职
   const positionsByCategory = useMemo(() => {

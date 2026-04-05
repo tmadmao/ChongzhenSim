@@ -40,6 +40,8 @@ export interface ChangeRequest {
   timestamp: number;    // 加入队列的时间戳
 }
 
+type NumericRecord = Record<string, number | undefined>;
+
 // 变动队列类 - 单例模式
 export class ChangeQueue {
   private queue: ChangeRequest[] = [];
@@ -124,7 +126,7 @@ export class ChangeQueue {
     this.appliedTreasuryChanges = []; // 清空之前的记录
     logger.info(`[ChangeQueue] Starting applyAll with ${this.queue.length} changes`);
     
-    let newState = JSON.parse(JSON.stringify(state)); // 深拷贝
+    const newState = JSON.parse(JSON.stringify(state)); // 深拷贝
     const logs: string[] = [];
     let appliedCount = 0;
 
@@ -270,33 +272,54 @@ export class ChangeQueue {
     
     // 統一架構：將可能的數據庫字段名轉換為 TypeScript 字段名
     const tsField = toTsField(change.field);
-    const oldValue = (province as any)[tsField];
+    const provinceRecord = province as NumericRecord;
+    const oldValue = provinceRecord[tsField] ?? 0;
 
     if (change.newValue !== undefined) {
       // 绝对值模式
-      (province as any)[tsField] = change.newValue;
+      provinceRecord[tsField] = change.newValue;
       const logMsg = `${province.name}.${tsField}: ${oldValue} → ${change.newValue} [${change.description}]`;
       logs.push(logMsg);
       logger.info(`[ChangeQueue] ${logMsg}`);
     } else if (change.delta !== undefined) {
       // 变动值模式
       const newValue = Math.max(0, (oldValue || 0) + change.delta);
-      (province as any)[tsField] = newValue;
+      provinceRecord[tsField] = newValue;
       const logMsg = `${province.name}.${tsField}: ${oldValue} → ${newValue} (${change.delta >= 0 ? '+' : ''}${change.delta}) [${change.description}]`;
       logs.push(logMsg);
       logger.info(`[ChangeQueue] ${logMsg}`);
     }
   }
 
-  private applyFactionChange(_state: GameState, change: ChangeRequest, logs: string[]): void {
+  private applyFactionChange(state: GameState, change: ChangeRequest, logs: string[]): void {
     // 派系变动通过 ministers 中的 faction 字段来处理
-    // 或者可以存储在 nationStats 中
-    logger.info(`[ChangeQueue] Faction change requested: ${change.target}.${change.field}`);
-    
-    // 暂时记录到日志，实际实现需要根据游戏设计调整
-    const logMsg = `派系变动: ${change.target}.${change.field} (${change.delta && change.delta >= 0 ? '+' : ''}${change.delta || 0}) [${change.description}]`;
-    logs.push(logMsg);
-    logger.info(`[ChangeQueue] ${logMsg}`);
+    if (!state.ministers || !Array.isArray(state.ministers)) {
+      logger.warn(`[ChangeQueue] state.ministers is undefined or not an array`);
+      return;
+    }
+
+    const affectedMinisters = state.ministers.filter(m => m.faction === change.target);
+    if (affectedMinisters.length === 0) {
+      logger.warn(`[ChangeQueue] No ministers found for faction: ${change.target}`);
+      return;
+    }
+
+    const field = change.field;
+    const isAbsolute = change.newValue !== undefined;
+    const delta = change.delta || 0;
+
+    for (const minister of affectedMinisters) {
+      const ministerRecord = minister as NumericRecord;
+      const oldValue = ministerRecord[field] ?? 0;
+      const newValue = isAbsolute
+        ? Math.max(0, Math.min(100, change.newValue || 0))
+        : Math.max(0, Math.min(100, oldValue + delta));
+      ministerRecord[field] = newValue;
+
+      const logMsg = `${minister.name} (${minister.faction}).${field}: ${oldValue} → ${newValue} ${isAbsolute ? '' : `(${delta >= 0 ? '+' : ''}${delta})`} [${change.description}]`;
+      logs.push(logMsg);
+      logger.info(`[ChangeQueue] ${logMsg}`);
+    }
   }
 
   private applyNationChange(state: GameState, change: ChangeRequest, logs: string[]): void {
@@ -306,9 +329,10 @@ export class ChangeQueue {
       return;
     }
 
-    const oldValue = (state.nationStats as any)[change.field] || 0;
+    const nationRecord = state.nationStats as NumericRecord;
+    const oldValue = nationRecord[change.field] ?? 0;
     const newValue = Math.max(0, Math.min(100, oldValue + (change.delta || 0)));
-    (state.nationStats as any)[change.field] = newValue;
+    nationRecord[change.field] = newValue;
 
     const logMsg = `国家属性.${change.field}: ${oldValue} → ${newValue} (${change.delta && change.delta >= 0 ? '+' : ''}${change.delta}) [${change.description}]`;
     logs.push(logMsg);
@@ -328,9 +352,10 @@ export class ChangeQueue {
       return;
     }
 
-    const oldValue = (minister as any)[change.field] || 0;
+    const ministerRecord = minister as NumericRecord;
+    const oldValue = ministerRecord[change.field] ?? 0;
     const newValue = Math.max(0, Math.min(100, oldValue + (change.delta || 0)));
-    (minister as any)[change.field] = newValue;
+    ministerRecord[change.field] = newValue;
 
     const logMsg = `${minister.name}.${change.field}: ${oldValue} → ${newValue} (${change.delta && change.delta >= 0 ? '+' : ''}${change.delta}) [${change.description}]`;
     logs.push(logMsg);

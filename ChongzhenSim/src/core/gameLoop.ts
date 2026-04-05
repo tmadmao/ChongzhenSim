@@ -78,8 +78,15 @@ export class GameLoop {
       this.financeSystem.setTurnInfo(state.turn, state.date);
 
       // 计算税收
-      const taxResults = this.taxSystem.calculateTax(state.provinces);
+      const taxResults = this.taxSystem.calculateTax(state.provinces, state.nationStats);
       const totalTax = taxResults.reduce((sum, r) => sum + r.actualTax, 0);
+      const settlementType = this.taxSystem.getSettlementType(state.turn);
+      const assetType = settlementType === 'autumn' ? 'grain' : 'gold';
+      const settlementLabel = settlementType === 'summer'
+        ? '夏银结算'
+        : settlementType === 'autumn'
+          ? '秋粮结算'
+          : '本回合无税收结算';
 
       // 计算支出
       const expenses = this.financeSystem.calculateExpenses(state);
@@ -88,7 +95,9 @@ export class GameLoop {
       accountingSystem.resetLedger(); // 先重置，确保只包含本回合的常规收支
 
       // 记录税收收入
-      accountingSystem.addIncome('全国各省份税收总收入', totalTax, '常规税收');
+      if (settlementType) {
+        accountingSystem.addIncome(settlementLabel, totalTax, settlementLabel, assetType);
+      }
 
       // 记录各项支出
       accountingSystem.addExpense('军队维持费用', expenses.military, '常规支出');
@@ -100,10 +109,37 @@ export class GameLoop {
       logger.info('[Step 2] 常规收支计算完成', {
         totalTax,
         totalExpense: expenses.total,
-        netIncome: totalTax - expenses.total
+        netIncome: totalTax - expenses.total,
+        settlementType,
+        assetType
       });
 
-      logs.push(`常规税收：${totalTax.toFixed(1)} 万两`);
+      if (settlementType === 'summer') {
+        logs.push(`夏银结算：${totalTax.toFixed(1)} 万两`);
+      } else if (settlementType === 'autumn') {
+        logs.push(`秋粮结算：${totalTax.toFixed(1)} 万石`);
+      } else {
+        logs.push('本回合无税收结算。');
+      }
+
+      if (settlementType) {
+        state.settlementHistory = [
+          ...(state.settlementHistory || []),
+          {
+            turn: state.turn,
+            date: state.date,
+            settlementType,
+            totalAmount: Math.round(totalTax * 100) / 100,
+            assetType,
+            description: settlementLabel
+          }
+        ];
+      }
+
+      if (settlementType === 'autumn') {
+        state.treasury.grain = (state.treasury.grain || 0) + totalTax;
+      }
+
       logs.push(`常规支出：${expenses.total.toFixed(1)} 万两`);
 
     } catch (error) {
@@ -158,6 +194,7 @@ export class GameLoop {
           turn: state.turn ?? 1,
           date: state.date ?? '崇祯元年正月',
           type: item.type,
+          assetType: item.assetType || 'gold',
           category: item.name ?? '未知类别',
           amount: item.amount ?? 0,
           description: item.description ?? '',
@@ -225,14 +262,14 @@ export class GameLoop {
 
       // 同步到 Zustand Store
       try {
-        const gameStoreModule = await import('@/store/gameStore') as any;
+        const gameStoreModule = await import('@/store/gameStore');
         const gameStore = gameStoreModule.useGameStore.getState();
         if (gameStore && gameStore.setCurrentLedger) {
           const ledger = accountingSystem.getLedger();
           gameStore.setCurrentLedger(ledger);
         }
 
-        const financeStoreModule = await import('@/store/financeStore') as any;
+        const financeStoreModule = await import('@/store/financeStore');
         const financeStore = financeStoreModule.useFinanceStore.getState();
         if (financeStore) {
           if (financeStore.updateTreasury) {
@@ -243,7 +280,7 @@ export class GameLoop {
           }
         }
 
-        const provinceStoreModule = await import('@/store/provinceStore') as any;
+        const provinceStoreModule = await import('@/store/provinceStore');
         const provinceStore = provinceStoreModule.useProvinceStore.getState();
         if (provinceStore && provinceStore.loadProvinces) {
           provinceStore.loadProvinces();
@@ -299,7 +336,7 @@ export class GameLoop {
     // 国策研究推进
     try {
       logger.debug('Starting policy research phase');
-      const policyStoreModule = await import('@/store/policyStore') as any;
+      const policyStoreModule = await import('@/store/policyStore');
       const policyStore = policyStoreModule.usePolicyStore.getState();
       const completedPolicies = policyStore.tickResearch();
 
@@ -369,7 +406,8 @@ export class GameLoop {
   }
 
   private async phase_DateAdvance(state: GameState, logs: string[]): Promise<GameState> {
-    let { turn, date, phase } = state;
+    let { turn, phase } = state;
+    const { date } = state;
 
     // 直接推进到下一天的早晨，不按早中晚顺序
     phase = 'morning';

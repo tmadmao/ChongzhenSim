@@ -118,14 +118,14 @@ const ProvinceInfoPanel: React.FC = () => {
             )}
           </div>
 
-          {/* 操作按钮 */}
-          <div className="flex flex-col gap-2 p-3 border-t border-palace-border flex-shrink-0">
-            <button className="palace-button-outline btn-glow text-sm">
-              调整税率
-            </button>
-            <button className="palace-button-outline btn-glow text-sm">
-              下达诏书
-            </button>
+          {/* 操作提示 */}
+          <div className="flex flex-col gap-2 p-3 border-t border-palace-border flex-shrink-0 text-xs text-palace-text-muted">
+            <div className="p-3 bg-palace-bg-light rounded border border-palace-border">
+              本省税率由皇极殿朝政决定，调整请前往「皇极殿」进行决策。
+            </div>
+            <div className="p-3 bg-palace-bg-light rounded border border-palace-border">
+              诏书发出后，税政与民心将立即生效。
+            </div>
           </div>
         </>
       )}

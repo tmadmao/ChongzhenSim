@@ -1,6 +1,8 @@
 import React, { useState } from 'react'
 import { MapContainer, GeoJSON, ZoomControl } from 'react-leaflet'
-import type { Layer } from 'leaflet'
+import type { Layer, Feature, LeafletMouseEvent } from 'leaflet'
+import type { GeoJsonObject } from 'geojson'
+import L from 'leaflet'
 
 import worldGeoJSON from '@/data/geojson/world_countries.json'
 import chinaGeoJSON from '@/data/geojson/china_provinces.json'
@@ -58,7 +60,7 @@ const MapView: React.FC = () => {
     }
   }
 
-  function worldStyle(feature: any) {
+  function worldStyle(feature: Feature) {
     const name: string = feature?.properties?.name || ''
     const faction = FACTIONS.find(f => f.countryNames.includes(name))
     if (faction) {
@@ -67,18 +69,18 @@ const MapView: React.FC = () => {
     return { fillColor: '#0a0d12', fillOpacity: 0.6, color: '#1e2230', weight: 0.5 }
   }
 
-  function worldOnEachFeature(feature: any, layer: Layer) {
+  function worldOnEachFeature(feature: Feature, layer: Layer) {
     const name: string = feature?.properties?.name || ''
     const faction = FACTIONS.find(f => f.countryNames.includes(name))
     if (!faction) return
-    ;(layer as any).bindTooltip(
+    ;(layer as L.Path).bindTooltip(
       `<div><strong style="color:#FFD700;font-size:14px">${faction.name}</strong><br/>
        <span style="color:#999;font-size:11px">${faction.description}</span></div>`,
       { className: 'ming-province-tooltip', sticky: true }
     )
   }
 
-  function mingStyle(feature: any) {
+  function mingStyle(feature: Feature) {
     const mingId: string = feature?.properties?.mingId || ''
     const isSelected = selectedProvinceId === mingId
     const isHovered  = hoveredId === mingId
@@ -91,17 +93,17 @@ const MapView: React.FC = () => {
     }
   }
 
-  function mingOnEachFeature(feature: any, layer: Layer) {
+  function mingOnEachFeature(feature: Feature, layer: Layer) {
     const mingId:  string = feature?.properties?.mingId  || ''
     const mingName:string = feature?.properties?.name    || ''
     const capital: string = feature?.properties?.capital || ''
 
-    ;(layer as any).on({
-      mouseover: (e: any) => {
+    ;(layer as L.Path).on({
+      mouseover: (e: LeafletMouseEvent) => {
         setHoveredId(mingId)
         e.target.setStyle({ weight: 2, color: '#e8c547', fillOpacity: 0.95 })
         const value = getProvinceValue(mingId)
-        ;(layer as any).bindTooltip(
+        ;(layer as L.Path).bindTooltip(
           `<div>
             <strong style="color:#FFD700;font-size:15px">${mingName}</strong>
             <span style="color:#C9A84C;font-size:11px"> 布政使司</span><br/>
@@ -111,9 +113,9 @@ const MapView: React.FC = () => {
           { className: 'ming-province-tooltip', sticky: true }
         ).openTooltip()
       },
-      mouseout: (e: any) => {
+      mouseout: (e: LeafletMouseEvent) => {
         setHoveredId(null)
-        ;(layer as any).closeTooltip()
+        ;(layer as L.Path).closeTooltip()
         e.target.setStyle(mingStyle(feature))
       },
       click: () => selectProvince(mingId),
@@ -169,17 +171,17 @@ const MapView: React.FC = () => {
       >
         <ZoomControl position="bottomleft" />
 
-        <GeoJSON key="world" data={worldGeoJSON as any} style={worldStyle} onEachFeature={worldOnEachFeature} />
+        <GeoJSON key="world" data={worldGeoJSON as GeoJsonObject} style={worldStyle} onEachFeature={worldOnEachFeature} />
 
         <GeoJSON
           key={`ming-${heatmapMode}-${selectedProvinceId}-${hoveredId}`}
-          data={mingData as any} style={mingStyle} onEachFeature={mingOnEachFeature}
+          data={mingData as GeoJsonObject} style={mingStyle} onEachFeature={mingOnEachFeature}
         />
 
-        <GeoJSON key="houjin" data={HOUJIN_POLYGON as any}
+        <GeoJSON key="houjin" data={HOUJIN_POLYGON as GeoJsonObject}
           style={{ fillColor: '#4a1a1a', fillOpacity: 0.75, color: '#8B0000', weight: 1.5 }}
           onEachFeature={(_f, layer) => {
-            ;(layer as any).bindTooltip(
+            ;(layer as L.Path).bindTooltip(
               '<div><strong style="color:#cf1322;font-size:14px">后金</strong><br/><span style="color:#999;font-size:11px">努尔哈赤所建，关外劲敌</span></div>',
               { className: 'ming-province-tooltip', sticky: true }
             )

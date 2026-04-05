@@ -191,6 +191,46 @@ export const SCRIPTED_EVENTS: ScriptedEvent[] = [
     ],
     interruptConditions: { turnsWithoutAction: 2 },
   },
+  {
+    id: 'regional_tax_policy',
+    title: '税赋调节议',
+    description: '朝廷待定南直隶税率：是借华东繁荣增加赋税，还是减轻税负稳民心？',
+    priority: 'important',
+    status: 'active',
+    triggerConditions: { autoTrigger: false },
+    choices: [
+      {
+        id: 'raise_south_tax',
+        text: '将南直隶税率提高至35%',
+        hint: '立即补国库，但北方民心可能受损',
+        effects: [
+          { type: 'province', target: 'nanzhili', field: 'taxRate', value: 0.35, mode: 'absolute', description: '南直隶税率上调至35%（绝对值）' },
+          { type: 'nation', target: 'all', field: 'peopleMorale', value: -10, mode: 'delta', description: '民心-10' },
+          { type: 'minister', target: 'donglin', field: 'support', value: -20, mode: 'delta', description: '东林党不满' },
+          { type: 'minister', target: 'eunuch_party', field: 'support', value: 10, mode: 'delta', description: '阉党支持度+10' }
+        ]
+      },
+      {
+        id: 'reduce_south_tax',
+        text: '将南直隶税率下调至25%',
+        hint: '以安民心，放缓财政压力',
+        effects: [
+          { type: 'province', target: 'nanzhili', field: 'taxRate', value: 0.25, mode: 'absolute', description: '南直隶税率下调至25%（绝对值）' },
+          { type: 'nation', target: 'all', field: 'peopleMorale', value: 12, mode: 'delta', description: '民心+12' },
+          { type: 'minister', target: 'donglin', field: 'support', value: 15, mode: 'delta', description: '东林党满意' }
+        ]
+      },
+      {
+        id: 'maintain_south_tax',
+        text: '暂维现状，继续观察',
+        hint: '稳妥无变动，保持朝廷弹性',
+        effects: [
+          { type: 'nation', target: 'all', field: 'peopleMorale', value: 2, mode: 'delta', description: '民心略有稳定' },
+          { type: 'minister', target: 'eunuch_party', field: 'support', value: 5, mode: 'delta', description: '阉党轻微赞成' }
+        ]
+      }
+    ]
+  },
 
   // ── 1628年必触发事件 ──
   {

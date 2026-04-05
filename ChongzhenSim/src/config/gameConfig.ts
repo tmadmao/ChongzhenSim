@@ -189,6 +189,7 @@ export const GAME_CONFIG = {
   // 税收系统配置
   TAX: {
     BASE_TAX_RATE: 0.1,                // 基础税收系数
+    GRAIN_BASE_RATE: 0.05,             // 基础秋粮结算系数
     CORRUPTION_FACTOR_DENOMINATOR: 200, // 腐败因子分母
     DISASTER_FACTOR: 0.1,              // 灾害因子
     MIN_MORALE_FACTOR: 0.3,            // 最低士气因子
@@ -417,7 +418,7 @@ export function validateMorale(morale: number): number {
  */
 export function getTaxRateLevelLabel(taxRate: number): string {
   const levels = GAME_CONFIG.PROVINCE.TAX_RATE.LEVELS;
-  for (const [_, level] of Object.entries(levels)) {
+  for (const [, level] of Object.entries(levels)) {
     if (taxRate >= level.min && taxRate < level.max) {
       return level.label;
     }

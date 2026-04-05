@@ -7,7 +7,7 @@ export class FinanceSystem {
   private currentTurn: number = 1;
   private initialTreasury: number = GAME_CONFIG.INITIAL.TREASURY;
 
-  setTurnInfo(turn: number, _date: string): void {
+  setTurnInfo(turn: number): void {
     this.currentTurn = turn;
   }
 
@@ -46,7 +46,7 @@ export class FinanceSystem {
     };
   }
 
-  recordExpenses(_expenses: ExpenseBreakdown): void {
+  recordExpenses(): void {
     // 此方法不再直接写入数据库
     // 支出记录已在gameLoop.ts中通过accountingSystem统一处理
     // 保留此方法用于向后兼容

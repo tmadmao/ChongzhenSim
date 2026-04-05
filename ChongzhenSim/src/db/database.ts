@@ -100,6 +100,7 @@ function createTables(database: SqlJsDatabase): void {
       turn INTEGER NOT NULL,
       game_date TEXT NOT NULL,
       type TEXT NOT NULL,
+      asset_type TEXT NOT NULL DEFAULT 'gold',
       category TEXT NOT NULL,
       amount REAL NOT NULL,
       province_id TEXT,
@@ -107,6 +108,13 @@ function createTables(database: SqlJsDatabase): void {
       created_at INTEGER NOT NULL
     )
   `);
+
+  // 兼容旧数据库：如果表已存在但缺少 asset_type 列，则添加默认列
+  try {
+    database.run(`ALTER TABLE treasury_transactions ADD COLUMN asset_type TEXT NOT NULL DEFAULT 'gold'`);
+  } catch {
+    // 如果列已存在或者 ALTER TABLE 不适用，则忽略错误
+  }
 
   database.run(`
     CREATE TABLE IF NOT EXISTS game_snapshots (
@@ -323,11 +331,11 @@ export function getAlertProvinces(): Province[] {
 export function insertTransaction(transaction: TreasuryTransaction): void {
   getDB().run(
     `INSERT INTO treasury_transactions 
-     (id, turn, game_date, type, category, amount, province_id, description, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (id, turn, game_date, type, asset_type, category, amount, province_id, description, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [transaction.id, transaction.turn, transaction.date, transaction.type,
-     transaction.category, transaction.amount, transaction.provinceId || null,
-     transaction.description, transaction.createdAt]
+     transaction.assetType || 'gold', transaction.category, transaction.amount,
+     transaction.provinceId || null, transaction.description, transaction.createdAt]
   );
 }
 
@@ -343,11 +351,12 @@ export function getTransactionsByTurn(turn: number): TreasuryTransaction[] {
       turn: row[1] as number,
       date: row[2] as string,
       type: row[3] as 'income' | 'expense',
-      category: row[4] as string,
-      amount: row[5] as number,
-      provinceId: row[6] as string | undefined,
-      description: row[7] as string,
-      createdAt: row[8] as number
+      assetType: row[4] as 'gold' | 'grain',
+      category: row[5] as string,
+      amount: row[6] as number,
+      provinceId: row[7] as string | undefined,
+      description: row[8] as string,
+      createdAt: row[9] as number
     }));
   } catch (error) {
     console.error('[Database] getTransactionsByTurn failed:', error);
@@ -367,11 +376,12 @@ export function getRecentTransactions(limit: number): TreasuryTransaction[] {
       turn: row[1] as number,
       date: row[2] as string,
       type: row[3] as 'income' | 'expense',
-      category: row[4] as string,
-      amount: row[5] as number,
-      provinceId: row[6] as string | undefined,
-      description: row[7] as string,
-      createdAt: row[8] as number
+      assetType: row[4] as 'gold' | 'grain',
+      category: row[5] as string,
+      amount: row[6] as number,
+      provinceId: row[7] as string | undefined,
+      description: row[8] as string,
+      createdAt: row[9] as number
     }));
   } catch (error) {
     console.error('[Database] getRecentTransactions failed:', error);
@@ -381,8 +391,8 @@ export function getRecentTransactions(limit: number): TreasuryTransaction[] {
 
 export function getTotalGold(): number {
   try {
-    const incomeResult = getDB().exec("SELECT SUM(amount) FROM treasury_transactions WHERE type = 'income'");
-    const expenseResult = getDB().exec("SELECT SUM(amount) FROM treasury_transactions WHERE type = 'expense'");
+    const incomeResult = getDB().exec("SELECT SUM(amount) FROM treasury_transactions WHERE type = 'income' AND asset_type = 'gold'");
+    const expenseResult = getDB().exec("SELECT SUM(amount) FROM treasury_transactions WHERE type = 'expense' AND asset_type = 'gold'");
     const income = (incomeResult[0]?.values[0]?.[0] as number) || 0;
     const expense = (expenseResult[0]?.values[0]?.[0] as number) || 0;
     return income - expense;
@@ -392,12 +402,25 @@ export function getTotalGold(): number {
   }
 }
 
+export function getTotalGrain(): number {
+  try {
+    const incomeResult = getDB().exec("SELECT SUM(amount) FROM treasury_transactions WHERE type = 'income' AND asset_type = 'grain'");
+    const expenseResult = getDB().exec("SELECT SUM(amount) FROM treasury_transactions WHERE type = 'expense' AND asset_type = 'grain'");
+    const income = (incomeResult[0]?.values[0]?.[0] as number) || 0;
+    const expense = (expenseResult[0]?.values[0]?.[0] as number) || 0;
+    return income - expense;
+  } catch (error) {
+    console.error('[Database] getTotalGrain failed:', error);
+    return 0;
+  }
+}
+
 export function getTreasuryHistory(turns: number): { turn: number; date: string; income: number; expense: number; balance: number }[] {
   try {
     const results = getDB().exec(
       `SELECT turn, game_date, 
-              SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END) as income,
-              SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) as expense
+              SUM(CASE WHEN type = 'income' AND asset_type = 'gold' THEN amount ELSE 0 END) as income,
+              SUM(CASE WHEN type = 'expense' AND asset_type = 'gold' THEN amount ELSE 0 END) as expense
        FROM treasury_transactions 
        GROUP BY turn 
        ORDER BY turn DESC 
@@ -438,6 +461,10 @@ export function getIncomeExpenseSummary(turn: number): { totalIncome: number; to
   };
   
   transactions.forEach(t => {
+    if (t.assetType && t.assetType !== 'gold') {
+      return;
+    }
+
     if (t.type === 'income') {
       summary.totalIncome += t.amount;
     } else {
@@ -494,13 +521,14 @@ export function getLatestState(): LatestState {
   try {
     const provinces = getAllProvinces();
     const gold = getTotalGold();
+    const grain = getTotalGrain();
     const transactions = getRecentTransactions(50);
     
     return {
       provinces,
       treasury: {
         gold,
-        grain: 0 // 目前數據庫沒有糧食表，暫時返回 0
+        grain
       },
       transactions
     };

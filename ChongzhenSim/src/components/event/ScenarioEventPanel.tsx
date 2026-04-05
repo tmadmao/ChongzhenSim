@@ -61,15 +61,14 @@ export function ScenarioEventPanel({ isVisible }: { isVisible: boolean }) {
 
     // 显示效果预览（仅用于UI展示，实际入队在 applyPlayerDecision 中处理）
     const effects: OptionEffect[] = selectedChoiceData.effects.map(e => {
-      const anyE = e as any;
       return {
         type: e.type as OptionEffect['type'],
         target: e.target,
         field: e.field,
         // 支持新旧两种格式
-        value: anyE.delta !== undefined ? anyE.delta : anyE.value,
-        configKey: anyE.configKey,
-        mode: (anyE.mode || 'delta') as 'delta' | 'absolute',
+        value: 'delta' in e ? e.delta : ('value' in e ? e.value : 0),
+        configKey: 'configKey' in e ? e.configKey : undefined,
+        mode: ('mode' in e ? e.mode : 'delta') as 'delta' | 'absolute',
         description: e.description
       };
     });
@@ -82,7 +81,7 @@ export function ScenarioEventPanel({ isVisible }: { isVisible: boolean }) {
         type: 'event_choice',
         eventId: activeEvent.id,
         choiceId,
-        effects: selectedChoiceData.effects as any
+        effects: selectedChoiceData.effects
       });
       setSelectedChoice(null);
       setShowEffects(false);

@@ -31,6 +31,7 @@ export interface TreasuryTransaction {
   turn: number;
   date: string;
   type: 'income' | 'expense';
+  assetType?: 'gold' | 'grain';
   category: string;
   amount: number;
   provinceId?: string;
@@ -88,6 +89,8 @@ export interface GameState {
   lastIncome?: number;
   lastExpense?: number;
   turnLog?: string[];
+  taxRateHistory: TaxRateHistoryEntry[];
+  settlementHistory: TaxSettlementRecord[];
 }
 
 export interface AIEventResponse {
@@ -105,13 +108,14 @@ export interface Choice {
   effects: GameEffect[];
 }
 
-export type EffectType = 'treasury' | 'province' | 'minister' | 'nation' | 'military';
+export type EffectType = 'treasury' | 'province' | 'minister' | 'nation' | 'military' | 'faction';
 
 export interface GameEffect {
   type: EffectType;
   target: string;
   field: string;
-  delta: number;
+  delta?: number;
+  newValue?: number;
   description: string;
 }
 
@@ -130,6 +134,8 @@ export interface TaxResult {
   actualTax: number;
   corruptionLoss: number;
   disasterLoss: number;
+  settlementType?: 'summer' | 'autumn';
+  assetType?: 'gold' | 'grain';
 }
 
 export interface TaxReport {
@@ -138,6 +144,25 @@ export interface TaxReport {
   provinceResults: TaxResult[];
   topProvince: TaxResult | null;
   bottomProvince: TaxResult | null;
+}
+
+export interface TaxRateHistoryEntry {
+  turn: number;
+  date: string;
+  provinceId: string;
+  provinceName: string;
+  oldRate: number;
+  newRate: number;
+  description: string;
+}
+
+export interface TaxSettlementRecord {
+  turn: number;
+  date: string;
+  settlementType: 'summer' | 'autumn';
+  totalAmount: number;
+  assetType: 'gold' | 'grain';
+  description: string;
 }
 
 export interface ExpenseBreakdown {

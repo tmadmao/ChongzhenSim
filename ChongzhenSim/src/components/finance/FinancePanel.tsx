@@ -19,6 +19,22 @@ interface FinancePanelProps {
   onToggle?: () => void;
 }
 
+const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: Array<{ name: string; value: number; color: string }>; label?: string }) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="palace-panel p-3 text-sm">
+        <p className="text-palace-text-muted mb-2">{label}</p>
+        {payload.map((entry, index) => (
+          <p key={index} style={{ color: entry.color }}>
+            {entry.name}: {entry.value.toLocaleString()} 万两
+          </p>
+        ))}
+      </div>
+    );
+  }
+  return null;
+};
+
 export function FinancePanel({ isCollapsed = false, onToggle }: FinancePanelProps) {
   const { treasury, recentTransactions, chartData, financialHealth } = useFinanceStore();
   const { gameState } = useGameStore();
@@ -57,22 +73,6 @@ export function FinancePanel({ isCollapsed = false, onToggle }: FinancePanelProp
       .sort((a, b) => a.taxRevenue - b.taxRevenue)
       .slice(0, 5);
   }, [gameState]);
-
-  const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: Array<{ name: string; value: number; color: string }>; label?: string }) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className="palace-panel p-3 text-sm">
-          <p className="text-palace-text-muted mb-2">{label}</p>
-          {payload.map((entry, index) => (
-            <p key={index} style={{ color: entry.color }}>
-              {entry.name}: {entry.value.toLocaleString()} 万两
-            </p>
-          ))}
-        </div>
-      );
-    }
-    return null;
-  };
 
   // 收缩状态下只显示一个小横条
   if (isCollapsed) {

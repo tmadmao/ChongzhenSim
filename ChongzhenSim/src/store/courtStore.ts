@@ -1,7 +1,10 @@
 import { create } from 'zustand'
 import type { CourtMemorial, MemorialChoice, DAY1_META } from '../data/scenario/day1Script'
 import type { GameEffect } from '../core/types'
+import type { OptionEffect } from '../api/schemas'
 import { ChangeType } from '../core/fieldKeys'
+import { SCRIPTED_EVENTS } from '../data/scenario/scriptedEvents'
+import { useGameStore } from './gameStore'
 
 // 单次选择记录
 export interface ChoiceRecord {
@@ -16,8 +19,9 @@ export interface ChoiceRecord {
 
 // 上朝阶段
 export type CourtPhase =
-  | 'opening'       // 开场白（进入动画）
-  | 'memorial'      // 大臣奏报（主交互阶段）
+  | 'opening'       // 开场白（司礼监秉笔太监）
+  | 'discussion'    // 大臣讨论（各派系表达观点）
+  | 'decision'      // 皇帝决策（显示选项）
   | 'summary'       // 退朝总结（展示本次所有决策）
   | 'closed'        // 已退朝（等待玩家点「结束回合」）
 
@@ -42,7 +46,8 @@ interface CourtStore {
   ) => void
 
   startOpening: () => void             // 进入开场白
-  proceedToMemorial: () => void        // 从开场白进入奏报阶段
+  proceedToDiscussion: () => void     // 从开场白进入大臣讨论
+  proceedToDecision: () => void       // 从大臣讨论进入皇帝决策
 
   makeChoice: (
     memorial: CourtMemorial,
@@ -52,6 +57,8 @@ interface CourtStore {
   nextMemorial: () => void             // 推进到下一条奏报
   proceedToSummary: () => void         // 进入退朝总结（所有奏报处理完或玩家主动退朝）
   dismissCourt: () => void             // 确认退朝
+
+  submitLLMDecree: (content: string) => void  // LLM 自拟圣旨接口占位
 
   resetCourt: () => void               // 新回合重置
 }
@@ -83,14 +90,18 @@ export const useCourtStore = create<CourtStore>((set, get) => ({
 
   startOpening: () => {
     set({ phase: 'opening', isAnimating: true })
-    // 开场白动画结束后自动调用 proceedToMemorial
+    // 开场白动画结束后自动调用 proceedToDiscussion
     setTimeout(() => {
-      set({ phase: 'memorial', isAnimating: false })
+      set({ phase: 'discussion', isAnimating: false })
     }, 3000)
   },
 
-  proceedToMemorial: () => {
-    set({ phase: 'memorial', isAnimating: false })
+  proceedToDiscussion: () => {
+    set({ phase: 'discussion', isAnimating: false })
+  },
+
+  proceedToDecision: () => {
+    set({ phase: 'decision', isAnimating: false })
   },
 
   makeChoice: async (memorial, choice) => {
@@ -127,13 +138,13 @@ export const useCourtStore = create<CourtStore>((set, get) => ({
         if ('value' in effect || 'configKey' in effect) {
           // 新格式 OptionEffect
           resolvedValue = resolveEffectValue(
-            (effect as any).configKey,
-            (effect as any).value
+            (effect as OptionEffect).configKey,
+            (effect as OptionEffect).value
           )
-          mode = (effect as any).mode || 'delta'
+          mode = (effect as OptionEffect).mode || 'delta'
         } else {
           // 旧格式 GameEffect (有 delta)
-          resolvedValue = (effect as any).delta || 0
+          resolvedValue = (effect as GameEffect).delta || 0
           mode = 'delta'
         }
 
@@ -149,24 +160,22 @@ export const useCourtStore = create<CourtStore>((set, get) => ({
 
         // 确定 ChangeType
         let changeType: ChangeType
-        switch (effect.type) {
-          case 'treasury':
-            changeType = ChangeType.TREASURY
-            break
-          case 'province':
-            changeType = ChangeType.PROVINCE
-            break
-          case 'minister':
-            changeType = ChangeType.OFFICIAL
-            break
-          case 'nation':
-            changeType = ChangeType.NATION
-            break
-          case 'military':
-            changeType = ChangeType.NATION
-            break
-          default:
-            changeType = ChangeType.EVENT
+        if (effect.type === 'treasury') {
+          changeType = ChangeType.TREASURY
+        } else if (effect.type === 'province') {
+          changeType = ChangeType.PROVINCE
+        } else if (effect.type === 'nation' || effect.type === 'military') {
+          changeType = ChangeType.NATION
+        } else if (effect.type === 'minister') {
+          // minister 可能是针对某个官员，也可能是针对派系支持度
+          const { useGameStore } = await import('./gameStore')
+          const gameState = useGameStore.getState().gameState
+          const hasMinisterId = gameState?.ministers?.some(m => m.id === effect.target)
+          changeType = hasMinisterId ? ChangeType.OFFICIAL : ChangeType.FACTION
+        } else if (effect.type === 'faction') {
+          changeType = ChangeType.FACTION
+        } else {
+          changeType = ChangeType.EVENT
         }
 
         // 添加到 ChangeQueue
@@ -180,15 +189,75 @@ export const useCourtStore = create<CourtStore>((set, get) => ({
           source: `朝堂[${memorial.subject}]`
         })
 
+        if (effect.type === 'province' && effect.field === 'taxRate') {
+          const { useGameStore } = await import('./gameStore')
+          const gameStore = useGameStore.getState()
+          const currentState = gameStore.gameState
+          if (currentState?.taxRateHistory && currentState.provinces) {
+            const province = currentState.provinces.find(p => p.id === effect.target)
+            if (province) {
+              const oldRate = province.taxRate
+              const newRate = newValue !== undefined ? newValue : oldRate + (delta || 0)
+              if (gameStore.recordTaxRateHistoryEntry) {
+                gameStore.recordTaxRateHistoryEntry({
+                  turn: currentState.turn,
+                  date: currentState.date,
+                  provinceId: province.id,
+                  provinceName: province.name,
+                  oldRate,
+                  newRate,
+                  description: `朝堂决策：${province.name} 税率调整`
+                })
+              }
+            }
+          }
+        }
+
         console.log(`[ChangeQueue] 已加入队列: ${effect.type}.${effect.field} ${mode === 'delta' ? (delta && delta >= 0 ? '+' : '') : '='}${resolvedValue}`)
       }
 
       console.log(`[CourtStore] 已提交 ${allEffects.length} 个效果到 ChangeQueue`)
+
+      const { useGameStore } = await import('./gameStore')
+      const gameStore = useGameStore.getState()
+
+      // 处理事件之间的锁定与解锁关系
+      if (choice.unlocksEventIds?.length || choice.locksEventIds?.length) {
+        const modifyEventStatus = (eventId: string, status: 'active' | 'locked' | 'failed' | 'completed') => {
+          const targetEvent = SCRIPTED_EVENTS.find(e => e.id === eventId)
+          if (targetEvent) {
+            targetEvent.status = status
+            return targetEvent.title
+          }
+          return null
+        }
+
+        const unlockedTitles: string[] = []
+        const lockedTitles: string[] = []
+
+        if (choice.unlocksEventIds?.length) {
+          for (const eventId of choice.unlocksEventIds) {
+            const title = modifyEventStatus(eventId, 'active')
+            if (title) unlockedTitles.push(title)
+          }
+        }
+        if (choice.locksEventIds?.length) {
+          for (const eventId of choice.locksEventIds) {
+            const title = modifyEventStatus(eventId, 'locked')
+            if (title) lockedTitles.push(title)
+          }
+        }
+
+        if (unlockedTitles.length > 0) {
+          gameStore.addTurnLog(`[朝堂] 解锁后续事件：${unlockedTitles.join('、')}`)
+        }
+        if (lockedTitles.length > 0) {
+          gameStore.addTurnLog(`[朝堂] 锁定事件：${lockedTitles.join('、')}`)
+        }
+      }
     }
 
     // 记录选择到日志
-    const { useGameStore } = await import('./gameStore')
-    const gameStore = useGameStore.getState()
     gameStore.addTurnLog(`[朝堂] ${memorial.ministerName} - ${memorial.subject}: ${choice.text}`)
 
     set({
@@ -218,6 +287,12 @@ export const useCourtStore = create<CourtStore>((set, get) => ({
   dismissCourt: () => {
     // 效果已在 makeChoice 时提交到 ChangeQueue，这里只需关闭朝堂
     set({ phase: 'closed', hasCourtedThisTurn: true })
+  },
+
+  submitLLMDecree: (content) => {
+    const { addTurnLog } = useGameStore.getState();
+    addTurnLog(`LLM 自拟圣旨占位：${content}`);
+    console.warn('[CourtStore] submitLLMDecree called (placeholder):', content);
   },
 
   resetCourt: () => {

@@ -6,6 +6,7 @@ import {
   type PolicyCategory,
   type NationalPolicy,
 } from '@/data/policies/nationalPolicies';
+import type { GameState } from '@/core/types';
 
 export function PolicyTreePanel() {
   const [activeCategory, setActiveCategory] = useState<PolicyCategory>('internal');
@@ -14,7 +15,7 @@ export function PolicyTreePanel() {
 
   const currentPolicies = useMemo(
     () => getPoliciesByCategory(activeCategory),
-    [activeCategory, policies]
+    [activeCategory, policies, getPoliciesByCategory]
   );
 
   // 统计各分类完成度
@@ -28,7 +29,7 @@ export function PolicyTreePanel() {
       };
       return acc;
     }, {} as Record<string, { total: number; completed: number; researching: number }>);
-  }, [policies]);
+  }, [policies, getPoliciesByCategory]);
 
   const handleStartResearch = (policyId: string) => {
     applyPlayerDecision({ type: 'start_policy_research', policyId, effects: [] });
@@ -106,7 +107,7 @@ export function PolicyTreePanel() {
 // 国策卡片子组件
 interface PolicyCardProps {
   policy: NationalPolicy;
-  gameState: any;
+  gameState: GameState;
   canResearch: { canResearch: boolean; reason?: string };
   onStartResearch: () => void;
   onCancelResearch: () => void;

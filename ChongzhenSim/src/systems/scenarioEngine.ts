@@ -1,4 +1,5 @@
 import type { GameState, GameEffect } from '@/core/types'
+import type { OptionEffect } from '@/api/schemas'
 import { SCRIPTED_EVENTS } from '@/data/scenario/scriptedEvents'
 import { HISTORICAL_CHARACTERS } from '@/data/scenario/historicalCharacters'
 import { NATIONAL_POLICIES } from '@/data/scenario/nationalPolicies'
@@ -31,7 +32,7 @@ export class ScenarioEngine {
   // ── 角色离场逻辑 ──
 
   private checkCharacterExits(state: GameState): GameState {
-    let newState = { ...state }
+    const newState = { ...state }
     const currentTurn = state.turn
     
     // 遍历所有历史人物，检查是否需要离场
@@ -121,7 +122,7 @@ export class ScenarioEngine {
   // ── 国策完成检查 ──
 
   private checkPolicyCompletion(state: GameState): GameState {
-    let newState = { ...state }
+    const newState = { ...state }
     
     for (const policy of NATIONAL_POLICIES) {
       const progress = policy.progress || 0;
@@ -144,7 +145,7 @@ export class ScenarioEngine {
   // ── 事件升级检查 ──
 
   private checkEventEscalation(state: GameState): GameState {
-    let newState = { ...state }
+    const newState = { ...state }
     
     for (const event of SCRIPTED_EVENTS) {
       if (event.status === 'active' && event.escalation) {
@@ -221,17 +222,18 @@ export class ScenarioEngine {
    * 不再直接修改游戏状态，而是进入队列等待回合结算
    * 支持 GameEffect 和 OptionEffect 两种格式
    */
-  private queueEffect(effect: GameEffect | any, source: string): void {
+  private queueEffect(effect: GameEffect | OptionEffect, source: string): void {
     try {
       console.log(`[ScenarioEngine] queueEffect called:`, { type: effect.type, target: effect.target, field: effect.field, source });
       
       // 解析数值：优先使用 delta，否则使用 value
-      const delta = effect.delta !== undefined ? effect.delta : effect.value;
+      const delta = effect.mode === 'absolute' ? undefined : (effect.delta !== undefined ? effect.delta : effect.value)
+      const newValue = effect.mode === 'absolute' ? effect.value : undefined
       
       switch (effect.type) {
         case 'treasury':
           if (effect.target === 'treasury' && (effect.field === 'gold' || effect.field === 'grain')) {
-            console.log(`[ScenarioEngine] Adding treasury effect to queue:`, { field: effect.field, delta });
+            console.log(`[ScenarioEngine] Adding treasury effect to queue:`, { field: effect.field, delta, newValue });
             
             // 添加到变动队列
             changeQueue.enqueue({
@@ -239,6 +241,7 @@ export class ScenarioEngine {
               target: effect.field,
               field: effect.field,
               delta,
+              newValue,
               description: effect.description || '国库变动',
               source
             })
@@ -273,6 +276,19 @@ export class ScenarioEngine {
             target: effect.target,
             field: effect.field,
             delta,
+            newValue,
+            description: effect.description || '派系变动',
+            source
+          })
+          break
+
+        case 'faction':
+          changeQueue.enqueue({
+            type: 'faction',
+            target: effect.target,
+            field: effect.field,
+            delta,
+            newValue,
             description: effect.description || '派系变动',
             source
           })

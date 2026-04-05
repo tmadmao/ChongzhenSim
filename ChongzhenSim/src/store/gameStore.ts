@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { GameState, Province, Minister, NationStats, AIEventResponse, PlayerDecision, GamePhase } from '../core/types';
+import type { GameState, Province, Minister, NationStats, AIEventResponse, PlayerDecision, GamePhase, GameEffect, TaxRateHistoryEntry } from '../core/types';
 import { emitGameEvent } from '../core/eventBus';
 import { gameLoop } from '../core/gameLoop';
 import { llmClient, buildEventContext } from '../api';
@@ -26,7 +26,7 @@ interface PendingDecision {
   eventId?: string;
   choiceId?: string;
   policyId?: string;
-  effects?: any[];
+  effects?: GameEffect[];
 }
 
 interface GameStore {
@@ -50,7 +50,8 @@ interface GameStore {
   setError: (error: string | null) => void;
   adjustProvinceTaxRate: (provinceId: string, rate: number) => void;
   replaceOfficial: (positionTitle: string, newMinisterId: string) => void;
-  applyBatchEffects: (effects: any[]) => void;
+  applyBatchEffects: (effects: GameEffect[]) => void;
+  recordTaxRateHistoryEntry: (entry: TaxRateHistoryEntry) => void;
   setCurrentLedger: (ledger: FinancialLedger) => void;
   clearPendingDecisions: () => void;
 }
@@ -117,7 +118,9 @@ export const useGameStore = create<GameStore>()(
             nationStats: initialNationStats,
             currentEvent: null,
             eventHistory: [],
-            isGameOver: false
+            isGameOver: false,
+            taxRateHistory: [],
+            settlementHistory: []
           };
           
           console.log('[GameStore] initGame: setting gameState');
@@ -153,7 +156,7 @@ export const useGameStore = create<GameStore>()(
         try {
           const result = await gameLoop.tick(gameState);
           
-          let newState: GameState = {
+          const newState: GameState = {
             ...gameState,
             turn: result.turn,
             date: result.date,
@@ -257,17 +260,16 @@ export const useGameStore = create<GameStore>()(
                 let mode: 'delta' | 'absolute';
 
                 const optEffect = effect as unknown as OptionEffect;
-                const gameEffect = effect as any;
                 if ('value' in effect || 'configKey' in effect) {
                   // 新格式 OptionEffect
                   resolvedValue = resolveEffectValue(
-                    optEffect.configKey as any,
+                    optEffect.configKey,
                     optEffect.value
                   );
                   mode = optEffect.mode || 'delta';
                 } else {
                   // 旧格式 GameEffect
-                  resolvedValue = gameEffect.delta || 0;
+                  resolvedValue = (effect as GameEffect).delta || 0;
                   mode = 'delta';
                 }
 
@@ -282,8 +284,24 @@ export const useGameStore = create<GameStore>()(
                 }
 
                 // 所有效果都添加到ChangeQueue
+                let changeType: ChangeType
+                if (effect.type === 'treasury') {
+                  changeType = ChangeType.TREASURY
+                } else if (effect.type === 'province') {
+                  changeType = ChangeType.PROVINCE
+                } else if (effect.type === 'nation' || effect.type === 'military') {
+                  changeType = ChangeType.NATION
+                } else if (effect.type === 'minister') {
+                  const hasMinisterId = gameState.ministers.some(m => m.id === effect.target)
+                  changeType = hasMinisterId ? ChangeType.OFFICIAL : ChangeType.FACTION
+                } else if (effect.type === 'faction') {
+                  changeType = ChangeType.FACTION
+                } else {
+                  changeType = ChangeType.EVENT
+                }
+
                 changeQueue.enqueue({
-                  type: effect.type as any,
+                  type: changeType,
                   target: effect.target,
                   field: effect.field,
                   delta,
@@ -291,7 +309,22 @@ export const useGameStore = create<GameStore>()(
                   description: effect.description || '事件效果',
                   source: decision.choiceId || 'unknown'
                 });
-
+                if (effect.type === 'province' && effect.field === 'taxRate') {
+                  const province = gameState.provinces.find(p => p.id === effect.target);
+                  if (province && get().recordTaxRateHistoryEntry) {
+                    const oldRate = province.taxRate;
+                    const newRate = newValue !== undefined ? newValue : oldRate + (delta || 0);
+                    get().recordTaxRateHistoryEntry({
+                      turn: gameState.turn,
+                      date: gameState.date,
+                      provinceId: province.id,
+                      provinceName: province.name,
+                      oldRate,
+                      newRate,
+                      description: `事件决策：${province.name} 税率调整`
+                    });
+                  }
+                }
                 console.log(`[ChangeQueue] 已加入队列: ${effect.type}.${effect.field} ${mode === 'delta' ? (delta && delta >= 0 ? '+' : '') : '='}${resolvedValue}`);
 
                 // 财务效果同时记录到AccountingSystem
@@ -321,7 +354,7 @@ export const useGameStore = create<GameStore>()(
           case 'start_policy_research': {
             // 处理国策研究
             if (decision.policyId) {
-              const policyStoreModule = await import('@/store/policyStore') as any;
+              const policyStoreModule = await import('@/store/policyStore');
               const policyStore = policyStoreModule.usePolicyStore.getState();
               const policy = policyStore.getPolicyById(decision.policyId);
               
@@ -360,7 +393,7 @@ export const useGameStore = create<GameStore>()(
           case 'cancel_policy_research': {
             // 取消国策研究
             if (decision.policyId) {
-              const policyStoreModule = await import('@/store/policyStore') as any;
+              const policyStoreModule = await import('@/store/policyStore');
               const policyStore = policyStoreModule.usePolicyStore.getState();
               policyStore.cancelResearch(decision.policyId);
               
@@ -380,13 +413,12 @@ export const useGameStore = create<GameStore>()(
               console.log(`[GameStore] Queueing ${decision.effects.length} decision effects`);
               
               for (const effect of decision.effects) {
-                const anyEffect = effect as any;
                 changeQueue.enqueue({
-                  type: effect.type as any,
+                  type: effect.type as ChangeType,
                   target: effect.target,
                   field: effect.field,
-                  delta: anyEffect.delta,
-                  newValue: anyEffect.newValue,
+                  delta: effect.delta,
+                  newValue: undefined,
                   description: effect.description || '决策效果',
                   source: decision.choiceId || 'unknown'
                 });
@@ -508,7 +540,7 @@ export const useGameStore = create<GameStore>()(
       },
 
       adjustProvinceTaxRate: async (provinceId: string, rate: number) => {
-        const { gameState, turnLog } = get();
+        const { gameState, turnLog, recordTaxRateHistoryEntry } = get();
         if (!gameState) return;
         
         const clampedRate = Math.max(0, Math.min(0.8, rate));
@@ -550,6 +582,36 @@ export const useGameStore = create<GameStore>()(
             source: '税率调整'
           });
         }
+
+        // 3. 民心变化：税率提升降低会影响民心
+        let moraleDelta = 0;
+        if (clampedRate > oldRate + 0.1) {
+          moraleDelta = -Math.floor((clampedRate - oldRate) * 20);
+        } else if (clampedRate < oldRate - 0.1) {
+          moraleDelta = Math.floor((oldRate - clampedRate) * 10);
+        }
+
+        if (moraleDelta !== 0) {
+          changeQueue.enqueue({
+            type: ChangeType.NATION,
+            target: 'nation',
+            field: 'peopleMorale',
+            delta: moraleDelta,
+            description: `${province.name} 税率调整民心变化: ${moraleDelta > 0 ? '+' : ''}${moraleDelta}`,
+            source: '税率调整'
+          });
+        }
+
+        // 记录税率历史
+        recordTaxRateHistoryEntry({
+          turn: gameState.turn,
+          date: gameState.date,
+          provinceId,
+          provinceName: province.name,
+          oldRate,
+          newRate: clampedRate,
+          description: `${province.name} 税率调整`
+        });
         
         // 注意：这里不修改 gameState，只记录到队列
         // 状态将在回合结束时统一更新
@@ -627,13 +689,27 @@ export const useGameStore = create<GameStore>()(
           
           // 将所有效果加入队列，统一在回合结束时处理
           for (const effect of effects) {
-            const anyEffect = effect as any;
+            let changeType: ChangeType
+            if (effect.type === 'treasury') {
+              changeType = ChangeType.TREASURY
+            } else if (effect.type === 'province') {
+              changeType = ChangeType.PROVINCE
+            } else if (effect.type === 'nation' || effect.type === 'military') {
+              changeType = ChangeType.NATION
+            } else if (effect.type === 'minister') {
+              const hasMinisterId = gameState?.ministers?.some(m => m.id === effect.target)
+              changeType = hasMinisterId ? ChangeType.OFFICIAL : ChangeType.FACTION
+            } else if (effect.type === 'faction') {
+              changeType = ChangeType.FACTION
+            } else {
+              changeType = ChangeType.EVENT
+            }
             changeQueue.enqueue({
-              type: effect.type as any,
+              type: changeType,
               target: effect.target,
               field: effect.field,
-              delta: anyEffect.delta,
-              newValue: anyEffect.newValue,
+              delta: effect.delta,
+              newValue: undefined,
               description: effect.description || '批量效果',
               source: 'applyBatchEffects'
             });
@@ -643,7 +719,7 @@ export const useGameStore = create<GameStore>()(
             turnLog: [...turnLog, `批量应用 ${effects.length} 个效果（待结算）`]
           });
           
-          emitGameEvent('effects:applied' as any, { effects });
+          emitGameEvent('effects:applied', { effects });
         } catch (error) {
           console.error('[GameStore] applyBatchEffects failed:', error);
           set({ 
@@ -655,6 +731,18 @@ export const useGameStore = create<GameStore>()(
       setCurrentLedger: (ledger) => {
         set({ currentLedger: ledger });
         emitGameEvent('ledger:updated', { ledger });
+      },
+
+      recordTaxRateHistoryEntry: (entry) => {
+        const { gameState } = get();
+        if (!gameState) return;
+        set({
+          gameState: {
+            ...gameState,
+            taxRateHistory: [...(gameState.taxRateHistory || []), entry]
+          }
+        });
+        logger.info('[GameStore] Added tax rate history entry', entry);
       },
 
       clearPendingDecisions: () => {

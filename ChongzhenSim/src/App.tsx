@@ -124,13 +124,15 @@ function App() {
       console.log('[App] Loading provinces and finance data, gameState:', !!gameState, 'dbReady:', dbReady);
       loadProvinces();
       loadFinanceData();
-      setIsDataLoaded(true);
+      // 延迟设置数据加载完成，避免级联渲染
+      setTimeout(() => setIsDataLoaded(true), 0);
     }
   }, [gameState, dbReady, isDataLoaded, isLoading, loadProvinces, loadFinanceData]);
 
   useEffect(() => {
     if (gameState && !dbReady) {
-      setNeedsNewGame(true);
+      // 延迟设置，避免级联渲染
+      setTimeout(() => setNeedsNewGame(true), 0);
     }
   }, [gameState, dbReady]);
 

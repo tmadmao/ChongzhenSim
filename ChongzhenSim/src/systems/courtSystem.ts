@@ -1,6 +1,7 @@
 import { DAY1_SCRIPT, DAY1_META, type CourtMemorial } from '../data/scenario/day1Script'
 import { SCRIPTED_EVENTS } from '../data/scenario/scriptedEvents'
 import type { GameState } from '../core/types'
+import type { ScriptedEvent } from '../data/scenario/scriptedEvents'
 
 export type GameMode = 'local' | 'llm'
 
@@ -13,17 +14,18 @@ export class CourtSystem {
    */
   async getMemorialsForTurn(
     turn: number,
-    state: GameState,
+    _state: GameState,
     mode: GameMode = 'local'
   ): Promise<CourtMemorial[]> {
 
     if (mode === 'local') {
-      return this.getLocalMemorials(turn, state)
+      return this.getLocalMemorials(turn)
     }
 
     // LLM 模式预留接口（后期实现）
+    console.warn('[CourtSystem] LLM 模式奏报生成尚未实现，当前使用本地剧本作为回退');
     // return this.getLLMMemorials(turn, state)
-    return this.getLocalMemorials(turn, state)
+    return this.getLocalMemorials(turn)
   }
 
   /**
@@ -31,7 +33,7 @@ export class CourtSystem {
    * 第1回合：返回 DAY1_SCRIPT 全部3条
    * 后续回合：从 scriptedEvents 中筛选 status==='active' 的事件并转换格式
    */
-  private getLocalMemorials(turn: number, state: GameState): CourtMemorial[] {
+  private getLocalMemorials(turn: number): CourtMemorial[] {
     if (turn === 1) {
       return DAY1_SCRIPT.slice(0, DAY1_META.maxMemorials)
     }
@@ -46,13 +48,13 @@ export class CourtSystem {
       })
       .slice(0, DAY1_META.maxMemorials)  // 最多取3条
 
-    return activeEvents.map(event => this.convertEventToMemorial(event, state))
+    return activeEvents.map(event => this.convertEventToMemorial(event))
   }
 
   /**
    * 将 ScriptedEvent 转换为 CourtMemorial 格式
    */
-  private convertEventToMemorial(event: any, _state: GameState): CourtMemorial {
+  private convertEventToMemorial(event: ScriptedEvent): CourtMemorial {
     // 从 historicalCharacters 中查找奏报大臣
     // 优先选择涉及该事件的大臣，否则用默认大臣
     return {
@@ -64,7 +66,7 @@ export class CourtSystem {
       urgencyLevel: event.priority,
       subject: event.title,
       content: event.description,
-      choices: event.choices.map((c: any) => ({
+      choices: event.choices.map((c) => ({
         id: c.id,
         text: c.text,
         hint: c.hint ?? '',

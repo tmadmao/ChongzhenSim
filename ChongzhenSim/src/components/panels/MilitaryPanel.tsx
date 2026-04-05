@@ -165,7 +165,7 @@ export function MilitaryPanel() {
       .map(generateGeneralData)
       .filter(d => d.minister.isAlive)
       .sort((a, b) => b.troops - a.troops);
-  }, [gameState?.ministers]);
+  }, [gameState.ministers]);
 
   const totalStats = useMemo(() => {
     const totalTroops = generals.reduce((sum, g) => sum + g.troops, 0);

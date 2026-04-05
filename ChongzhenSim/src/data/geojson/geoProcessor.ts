@@ -46,8 +46,29 @@ const MING_INFO: Record<string, { name: string; capital: string; region: string 
   liaodong:      { name: '辽东',   capital: '辽阳', region: 'north' },
 }
 
-export function buildMingGeoJSON(modernGeoJSON: any) {
-  const mingMap = new Map<string, any>()
+// GeoJSON类型定义
+interface GeoJSONFeature {
+  type: string
+  id?: string
+  properties?: {
+    name?: string
+    NAME?: string
+    NL_NAME_1?: string
+    [key: string]: unknown
+  }
+  geometry?: {
+    type: string
+    coordinates: unknown
+  }
+}
+
+interface GeoJSONFeatureCollection {
+  type: string
+  features: GeoJSONFeature[]
+}
+
+export function buildMingGeoJSON(modernGeoJSON: GeoJSONFeatureCollection) {
+  const mingMap = new Map<string, GeoJSONFeature>()
 
   for (const feature of modernGeoJSON.features) {
     // 兼容多种字段名

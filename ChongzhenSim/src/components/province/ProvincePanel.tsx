@@ -1,15 +1,11 @@
-import { useState, useMemo } from 'react';
+import { useMemo } from 'react';
 import { useProvinceStore } from '../../store/provinceStore';
-import { useGameStore } from '../../store/gameStore';
-import type { Province, Region } from '../../core/types';
+import type { Region } from '../../core/types';
 
 type SortBy = 'tax' | 'unrest' | 'population' | 'military';
 
 export function ProvincePanel() {
   const { provinces, selectedProvinceId, selectProvince, setSortBy, setFilterRegion, sortBy, filterRegion } = useProvinceStore();
-  const { adjustProvinceTaxRate } = useGameStore();
-  const [editingProvince, setEditingProvince] = useState<string | null>(null);
-  const [tempTaxRate, setTempTaxRate] = useState(0);
 
   const alertCount = provinces.filter(p => p.civilUnrest > 70 || p.disasterLevel >= 3).length;
 
@@ -37,16 +33,6 @@ export function ProvincePanel() {
 
     return filtered;
   }, [provinces, sortBy, filterRegion]);
-
-  const handleTaxAdjust = (provinceId: string, rate: number) => {
-    adjustProvinceTaxRate(provinceId, rate);
-    setEditingProvince(null);
-  };
-
-  const openTaxEditor = (province: Province) => {
-    setEditingProvince(province.id);
-    setTempTaxRate(province.taxRate);
-  };
 
   const getRegionLabel = (region: Region) => {
     const labels: Record<Region, string> = {
@@ -142,56 +128,14 @@ export function ProvincePanel() {
                 </div>
               </div>
 
-              {editingProvince === province.id ? (
-                <div className="border-t border-palace-border pt-2 mt-2">
-                  <label className="text-palace-text-muted text-xs block mb-1">
-                    税率: {(tempTaxRate * 100).toFixed(0)}%
-                  </label>
-                  <input
-                    type="range"
-                    min="0"
-                    max="80"
-                    value={tempTaxRate * 100}
-                    onChange={(e) => setTempTaxRate(parseInt(e.target.value) / 100)}
-                    className="w-full h-2 bg-palace-bg-light rounded-lg appearance-none cursor-pointer accent-palace-gold"
-                  />
-                  <div className="flex gap-2 mt-2">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleTaxAdjust(province.id, tempTaxRate);
-                      }}
-                      className="palace-button-gold text-xs flex-1 py-1"
-                    >
-                      确认
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingProvince(null);
-                      }}
-                      className="palace-button-outline text-xs flex-1 py-1"
-                    >
-                      取消
-                    </button>
-                  </div>
-                  {province.civilUnrest > 50 && (
-                    <p className="text-warning text-xs mt-2">
-                      ⚠️ 民乱较高，提高税率可能引发民变
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openTaxEditor(province);
-                  }}
-                  className="palace-button-outline text-xs w-full py-1"
-                >
-                  调整税率
-                </button>
-              )}
+              <div className="border-t border-palace-border pt-2 mt-2 text-xs text-palace-text-muted">
+                <p>当前税率由皇极殿朝政决策决定，调整请前往「皇极殿」处理。</p>
+                {province.civilUnrest > 50 && (
+                  <p className="text-warning mt-2">
+                    ⚠️ 民乱较高，提高税率可能引发民变
+                  </p>
+                )}
+              </div>
             </div>
           );
         })}

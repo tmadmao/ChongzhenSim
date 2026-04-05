@@ -1,5 +1,25 @@
 # 更新日志 Changelog
 
+## [v0.2.4] - 2026-04-05
+
+### 剧本框架系统完成 🎭
+- 实现两套互补剧本系统：**朝会系统**（太监宣旨→奏对→圣裁→退朝）+ **剧本事件系统**（触发/升级/中断/连锁/unlocks-locks分支）
+- 效果系统覆盖 Treasury / Province / Nation / Minister 四大类型
+- 新增文档：[scenario-framework.md](docs/scenario-framework.md)（8大章节）、[scenario-quick-reference.md](docs/scenario-quick-reference.md)、[court-flow.md](docs/court-flow.md)
+- 新增模板：[template-turn-script.ts](src/data/scenario/template-turn-script.ts)、[template-scripted-event.ts](src/data/scenario/template-scripted-event.ts)
+
+### 代码质量进展
+- **any 类型全部清除** ✅
+
+### 进度同步
+- ✅ 结算与税率基础实现（夏银/秋粮双结算、税率仅结算时生效、税率历史记录）
+- ✅ 朝堂讨论与裁决系统（CourtPanel 多阶段流程、派系观点、忠诚度反馈）
+- ⚠️ 圣旨与流程联动（圣旨立即生效已完成，深度联动待接）
+
+### 文档更新
+- 重构 [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)：纯开发计划文档，功能模块清单 + 任务拆分 + 里程碑时间线
+
+
 ## [v0.2.3] - 2026-03-25
 
 ### 项目状态更新
@@ -54,7 +74,7 @@
 - **可游玩**：基础玩法已就绪，但剧本内容尚未完善
 - **待开发**：
   - 剧本事件内容扩充
-  - LLM 动态事件生成功能（尚未实装）
+  - LLM 动态事件生成功能
   - 更多历史事件与剧情
 
 ---
@@ -269,7 +289,7 @@ GAME_CONFIG = {
 
 #### 国策树系统构建完成
 - 实现了完整的国策树UI界面，支持分类显示、研究进度、前置条件等功能
-- 开发了国策状态管理系统，支持开始研究、取消研究、研究进度推进等功能
+- 开发了国策状态管理系统，支持开始研究、取消研究、研究进度等功能
 - 设计了丰富的国策数据，涵盖内政、军事、政治、科技、外交、民生等多个类别
 
 ### 新增文件
@@ -399,7 +419,7 @@ GAME_CONFIG = {
 - 支持热力图模式：税收、民乱、军力、天灾、贪腐
 - 明代两京十三省地理数据映射
 - GeoJSON 数据处理工具，将现代省份边界转换为明代行政区划
-- 省份点击信息面板，显示详细省份状态
+- �份点击信息面板，显示详细省份状态
 
 #### 双主题支持
 - 新增白色简约主题，与原有华贵暗金主题可切换

@@ -1,28 +1,22 @@
-import { useState, useEffect } from 'react';
+import { useMemo } from 'react';
 import { accountingSystem } from '../../engine/AccountingSystem';
 import { useGameStore } from '../../store/gameStore';
 import { getIncomeExpenseSummary, getRecentTransactions } from '../../db/database';
+import type { LedgerItem } from '../../api/schemas';
 
 export function DebugPanel() {
   const { gameState } = useGameStore();
-  const [ledgerData, setLedgerData] = useState<any>(null);
-  const [dbSummary, setDbSummary] = useState<any>(null);
-  const [recentTransactions, setRecentTransactions] = useState<any[]>([]);
-
-  useEffect(() => {
-    if (gameState) {
-      // 获取中央结算系统的财务总账
-      const ledger = accountingSystem.getLedger();
-      setLedgerData(ledger);
-
-      // 获取数据库中的收支汇总
-      const summary = getIncomeExpenseSummary(gameState.turn);
-      setDbSummary(summary);
-
-      // 获取最近的交易记录
-      const transactions = getRecentTransactions(10);
-      setRecentTransactions(transactions);
-    }
+  
+  const ledgerData = useMemo(() => {
+    return gameState ? accountingSystem.getLedger() : null;
+  }, [gameState]);
+  
+  const dbSummary = useMemo(() => {
+    return gameState ? getIncomeExpenseSummary(gameState.turn) : null;
+  }, [gameState]);
+  
+  const recentTransactions = useMemo(() => {
+    return gameState ? getRecentTransactions(10) : [];
   }, [gameState]);
 
   if (!gameState) {
@@ -86,7 +80,7 @@ export function DebugPanel() {
             <div className="mt-4">
               <h4 className="text-sm font-semibold text-palace-text-muted mb-2">交易明细</h4>
               <div className="space-y-1 max-h-40 overflow-y-auto">
-                {ledgerData.items.map((item: any, index: number) => (
+                {ledgerData.items.map((item: LedgerItem, index: number) => (
                   <div key={index} className="flex justify-between text-xs py-1 border-b border-palace-border/30">
                     <span className="text-palace-text">{item.name}</span>
                     <span className={item.type === 'income' ? 'text-green-400' : 'text-red-400'}>
